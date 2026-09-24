@@ -1350,7 +1350,7 @@ async function connectWebSocket(sampleRate) {
             // is the expected transport there).
             if (('WebTransport' in window) && !wtFallbackNotified) {
                 wtFallbackNotified = true;
-                showToast('Using WebSocket fallback — WebTransport (UDP) unavailable. Allow UDP on port 8443 in your firewall for lower latency.');
+                showToast(`Using WebSocket fallback — WebTransport (UDP) unavailable. Allow UDP on port ${serverInfo.wt_port} in your firewall for lower latency.`);
             }
             resolve();
         };

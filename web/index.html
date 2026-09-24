@@ -28,9 +28,12 @@
 
     <!-- Pairing Screen -->
     <div id="pair-screen" class="screen active">
-        <div class="logo">
-            QuicMic
-            <span>Wireless Microphone</span>
+        <div class="pair-hero">
+            <div class="pair-mark">🎙️</div>
+            <div class="logo">
+                QuicMic
+                <span>Wireless Microphone</span>
+            </div>
         </div>
 
         <div class="card">
@@ -40,6 +43,8 @@
             <button id="pair-btn" class="btn btn-primary">Connect</button>
         </div>
 
+        <div class="pair-sub">The 6-digit PIN is shown in your computer's QuicMic window.</div>
+
         <div id="server-lost" class="server-lost" role="alert" hidden>
             <div class="server-lost-msg">Connection to the server was lost.<br>Refresh the page to reconnect.</div>
             <button id="reload-btn" class="btn btn-primary">Reload</button>
@@ -48,84 +53,15 @@
 
     <!-- Main Screen -->
     <div id="main-screen" class="screen">
-        <div class="logo">
-            QuicMic
-        </div>
-
-        <div id="status-badge" class="status-badge disconnected" role="status" aria-live="polite">
-            <div class="status-dot" aria-hidden="true"></div>
-            <span id="status-text">Idle</span>
-        </div>
-
-        <div class="toolbar">
-            <button id="power-save-btn" class="tool-btn">🔋 Eco</button>
-            <button id="settings-btn" class="tool-btn">⚙️ Settings</button>
-        </div>
-
-        <!-- Settings Panel -->
-        <div id="settings-panel" class="settings-panel">
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span>Noise Gate</span>
-                    <div class="setting-control">
-                        <span id="ng-value" class="setting-val">-50 dB</span>
-                        <button id="ng-reset" class="reset-link" title="Reset to default"
-                            aria-label="Reset noise gate to default">🔄</button>
-                    </div>
-                </div>
-                <input type="range" id="ng-slider" class="slider" min="-100" max="0" step="1"
-                    value="-50">
-            </div>
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span>Gain</span>
-                    <div class="setting-control">
-                        <span id="gain-value" class="setting-val">1.0x</span>
-                        <button id="gain-reset" class="reset-link" title="Reset to default"
-                            aria-label="Reset gain to default">🔄</button>
-                    </div>
-                </div>
-                <input type="range" id="gain-slider" class="slider" min="0.2" max="3.0" step="0.1" value="1.0">
-            </div>
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span>Output Volume</span>
-                    <div class="setting-control">
-                        <span id="ov-value" class="setting-val">1.0x</span>
-                        <button id="ov-reset" class="reset-link" title="Reset to default"
-                            aria-label="Reset output volume to default">🔄</button>
-                    </div>
-                </div>
-                <input type="range" id="ov-slider" class="slider" min="0" max="5" step="0.1" value="1.0">
-                <div class="setting-hint">PC-side volume, applied after your mic audio reaches the computer.</div>
-            </div>
-            <div class="setting-row">
-                <div class="setting-label">
-                    <span>Latency Recovery</span>
-                    <div class="setting-control">
-                        <span id="lr-value" class="setting-val">150 ms</span>
-                        <button id="lr-reset" class="reset-link" title="Reset to default"
-                            aria-label="Reset latency recovery to default">🔄</button>
-                    </div>
-                </div>
-                <input type="range" id="lr-slider" class="slider" min="0" max="500" step="10" value="150">
-            </div>
-            <div class="setting-row" id="monitor-row">
-                <div class="setting-label">
-                    <span>Monitor (hear yourself)</span>
-                    <div class="setting-control">
-                        <label class="toggle" title="Hear your own mic through the PC's speakers/headphones">
-                            <input type="checkbox" id="monitor-toggle">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                </div>
-                <div class="setting-hint">Plays your mic through the PC's speakers/headphones. Needs the server
-                    started with <code>--monitor-device</code>. ⚠ Speakers can feed back — use headphones.</div>
+        <div class="topbar">
+            <div class="logo-small">QuicMic</div>
+            <div id="status-badge" class="status-badge disconnected" role="status" aria-live="polite">
+                <div class="status-dot" aria-hidden="true"></div>
+                <span id="status-text">Idle</span>
             </div>
         </div>
 
-        <div class="card">
+        <div class="card hero">
             <div class="mic-container">
                 <div id="mic-ring" class="mic-ring"></div>
                 <button id="mic-btn" class="mic-btn" aria-label="Start or stop microphone">
@@ -143,33 +79,113 @@
                     <span id="vu-level">0%</span>
                 </div>
             </div>
-
         </div>
 
-        <div class="stats">
-            <div class="stat">
-                <span class="stat-label">Transport</span>
-                <span id="stat-transport" class="stat-value transport">—</span>
+        <div class="toolbar">
+            <button id="power-save-btn" class="tool-btn">🔋 Eco</button>
+            <button id="settings-btn" class="tool-btn">⚙️ Settings</button>
+        </div>
+
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="settings-panel">
+            <div class="settings-group">
+                <div class="settings-group-title">Microphone</div>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Noise Gate</span>
+                        <div class="setting-control">
+                            <span id="ng-value" class="setting-val">-50 dB</span>
+                            <button id="ng-reset" class="reset-link" title="Reset to default"
+                                aria-label="Reset noise gate to default">🔄</button>
+                        </div>
+                    </div>
+                    <input type="range" id="ng-slider" class="slider" min="-100" max="0" step="1" value="-50">
+                </div>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Gain</span>
+                        <div class="setting-control">
+                            <span id="gain-value" class="setting-val">1.0x</span>
+                            <button id="gain-reset" class="reset-link" title="Reset to default"
+                                aria-label="Reset gain to default">🔄</button>
+                        </div>
+                    </div>
+                    <input type="range" id="gain-slider" class="slider" min="0.2" max="3.0" step="0.1" value="1.0">
+                </div>
             </div>
-            <div class="stat">
-                <span class="stat-label">API RTT (ping)</span>
-                <span id="stat-ping" class="stat-value">—</span>
+
+            <div class="settings-group">
+                <div class="settings-group-title">Output</div>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Output Volume</span>
+                        <div class="setting-control">
+                            <span id="ov-value" class="setting-val">1.0x</span>
+                            <button id="ov-reset" class="reset-link" title="Reset to default"
+                                aria-label="Reset output volume to default">🔄</button>
+                        </div>
+                    </div>
+                    <input type="range" id="ov-slider" class="slider" min="0" max="5" step="0.1" value="1.0">
+                    <div class="setting-hint">PC-side volume, applied after your mic audio reaches the computer.</div>
+                </div>
+                <div class="setting-row" id="monitor-row">
+                    <div class="setting-label">
+                        <span>Monitor (hear yourself)</span>
+                        <div class="setting-control">
+                            <label class="toggle" title="Hear your own mic through the PC's speakers/headphones">
+                                <input type="checkbox" id="monitor-toggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-hint">Plays your mic through the PC's speakers/headphones. Needs the server
+                        started with <code>--monitor-device</code>. ⚠ Speakers can feed back — use headphones.</div>
+                </div>
             </div>
-            <div class="stat">
-                <span class="stat-label">Buffer</span>
-                <span id="stat-buffer" class="stat-value">—</span>
+
+            <div class="settings-group">
+                <div class="settings-group-title">Connection</div>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Latency Recovery</span>
+                        <div class="setting-control">
+                            <span id="lr-value" class="setting-val">150 ms</span>
+                            <button id="lr-reset" class="reset-link" title="Reset to default"
+                                aria-label="Reset latency recovery to default">🔄</button>
+                        </div>
+                    </div>
+                    <input type="range" id="lr-slider" class="slider" min="0" max="500" step="10" value="150">
+                </div>
             </div>
-            <div class="stat">
-                <span class="stat-label">Packets</span>
-                <span id="stat-packets" class="stat-value">0</span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Uptime</span>
-                <span id="stat-uptime" class="stat-value">—</span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Loss</span>
-                <span id="stat-loss" class="stat-value">0.00%</span>
+
+            <div class="settings-group">
+                <div class="settings-group-title">Diagnostics</div>
+                <div class="stats">
+                    <div class="stat">
+                        <span class="stat-label">Transport</span>
+                        <span id="stat-transport" class="stat-value transport">—</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">API RTT (ping)</span>
+                        <span id="stat-ping" class="stat-value">—</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Buffer</span>
+                        <span id="stat-buffer" class="stat-value">—</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Packets</span>
+                        <span id="stat-packets" class="stat-value">0</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Uptime</span>
+                        <span id="stat-uptime" class="stat-value">—</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Loss</span>
+                        <span id="stat-loss" class="stat-value">0.00%</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

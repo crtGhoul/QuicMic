@@ -1,21 +1,28 @@
+/* QuicMic phone UI — clean, organized, app-like.
+   All element IDs and JS-toggled classes are unchanged from the original design;
+   this file only re-presents them. */
+
 :root {
-    --bg-primary: #0a0a0f;
-    --bg-secondary: #12121a;
-    --bg-card: #1a1a2e;
-    --bg-glass: rgba(26, 26, 46, 0.7);
-    --border: rgba(255, 255, 255, 0.06);
-    --text-primary: #e8e8f0;
-    --text-secondary: #8888a0;
-    --text-muted: #555566;
+    --bg-primary: #0b0b12;
+    --bg-secondary: #101018;
+    --bg-card: #15151f;
+    --bg-glass: rgba(21, 21, 31, 0.72);
+    --bg-input: #0e0e15;
+    --border: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.12);
+    --text-primary: #ececf4;
+    --text-secondary: #9a9ab2;
+    --text-muted: #5d5d74;
     --accent: #6c63ff;
-    --accent-glow: rgba(108, 99, 255, 0.3);
+    --accent-soft: #a78bfa;
+    --accent-glow: rgba(108, 99, 255, 0.32);
     --green: #2ecc71;
-    --green-glow: rgba(46, 204, 113, 0.3);
+    --green-glow: rgba(46, 204, 113, 0.28);
     --red: #e74c3c;
-    --red-glow: rgba(231, 76, 60, 0.3);
+    --red-glow: rgba(231, 76, 60, 0.28);
     --yellow: #f1c40f;
-    --radius: 16px;
-    --radius-sm: 10px;
+    --radius: 20px;
+    --radius-sm: 14px;
     --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -25,30 +32,36 @@
     box-sizing: border-box;
 }
 
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg-primary);
     color: var(--text-primary);
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 20px;
+    padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
     user-select: none;
     -webkit-user-select: none;
     overflow-x: hidden;
     overflow-y: auto;
+    background:
+        radial-gradient(600px 400px at 50% -80px, rgba(108, 99, 255, 0.10), transparent 70%),
+        var(--bg-primary);
 }
 
-/* ── Pairing Screen ─────────────────────────────────────── */
+/* ── Screens ────────────────────────────────────────────── */
 
 .screen {
     display: none;
     flex-direction: column;
     align-items: center;
     width: 100%;
-    max-width: 380px;
-    gap: 24px;
+    max-width: 400px;
+    gap: 16px;
     animation: fadeIn 0.4s ease;
 }
 
@@ -69,23 +82,40 @@ body {
     }
 }
 
+/* ── Brand ──────────────────────────────────────────────── */
+
 .logo {
-    font-size: 28px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
-    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-soft));
     -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
     background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-align: center;
 }
 
 .logo span {
     -webkit-text-fill-color: var(--text-secondary);
-    font-weight: 400;
+    font-weight: 500;
     font-size: 14px;
+    letter-spacing: 0.2px;
     display: block;
-    margin-top: 2px;
+    margin-top: 4px;
 }
+
+/* Small brand lockup used in the main screen's top bar. */
+.logo-small {
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* ── Cards & buttons ────────────────────────────────────── */
 
 .card {
     width: 100%;
@@ -98,14 +128,76 @@ body {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
 .card-title {
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 1.2px;
+    text-align: center;
+}
+
+.btn {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    cursor: pointer;
+    transition: transform var(--transition), opacity var(--transition), box-shadow var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--accent), #8b7cf7);
+    color: white;
+    box-shadow: 0 6px 24px var(--accent-glow);
+}
+
+.btn-primary:active {
+    transform: scale(0.97);
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* ── Pairing screen ─────────────────────────────────────── */
+
+.pair-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.pair-mark {
+    width: 76px;
+    height: 76px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, var(--accent), #8b7cf7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    box-shadow: 0 10px 32px var(--accent-glow);
+}
+
+.pair-sub {
+    font-size: 14px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.55;
+    max-width: 300px;
 }
 
 .pin-input {
@@ -127,7 +219,7 @@ body {
        with the same distance to each border. */
     padding: 16px var(--pin-pad);
     padding-left: calc(var(--pin-pad) + var(--pin-gap));
-    background: var(--bg-primary);
+    background: var(--bg-input);
     border: 2px solid var(--border);
     border-radius: var(--radius-sm);
     font-size: clamp(22px, 7.5vw, 32px);
@@ -136,7 +228,7 @@ body {
     text-align: left;
     color: var(--text-primary);
     outline: none;
-    transition: border-color var(--transition);
+    transition: border-color var(--transition), box-shadow var(--transition);
     font-family: 'SF Mono', 'Menlo', monospace;
 }
 
@@ -200,54 +292,44 @@ body {
     }
 }
 
-.btn {
+/* ── Main screen: top bar ───────────────────────────────── */
+
+.topbar {
     width: 100%;
-    padding: 16px;
-    border: none;
-    border-radius: var(--radius-sm);
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition);
-    position: relative;
-    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 2px 0;
 }
-
-.btn-primary {
-    background: linear-gradient(135deg, var(--accent), #8b7cf7);
-    color: white;
-}
-
-.btn-primary:active {
-    transform: scale(0.97);
-}
-
-.btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* ── Main Screen ────────────────────────────────────────── */
 
 .status-badge {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 14px;
+    padding: 7px 14px;
     border-radius: 100px;
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    border: 1px solid transparent;
 }
 
 .status-badge.disconnected {
-    background: rgba(231, 76, 60, 0.12);
+    background: rgba(231, 76, 60, 0.10);
+    border-color: rgba(231, 76, 60, 0.22);
     color: var(--red);
 }
 
 .status-badge.connected {
-    background: rgba(46, 204, 113, 0.12);
+    background: rgba(46, 204, 113, 0.10);
+    border-color: rgba(46, 204, 113, 0.22);
     color: var(--green);
+}
+
+.status-badge.muted {
+    background: rgba(241, 196, 15, 0.10);
+    border-color: rgba(241, 196, 15, 0.22);
+    color: var(--yellow);
 }
 
 .status-dot {
@@ -275,28 +357,170 @@ body {
     }
 }
 
-/* ── Toolbar ────────────────────────────────────────────── */
+/* ── Main screen: hero (mic) card ───────────────────────── */
+
+.hero {
+    align-items: center;
+    padding: 36px 24px 30px;
+    gap: 0;
+}
+
+.mic-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 6px 0 4px;
+}
+
+.mic-ring {
+    position: absolute;
+    width: 172px;
+    height: 172px;
+    border-radius: 50%;
+    border: 3px solid var(--border);
+    transition: all 0.6s ease;
+}
+
+.mic-ring.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 40px var(--accent-glow);
+    animation: ringPulse 1.5s ease infinite;
+}
+
+/* Voice activity (gate open): brighten the ring's glow. Fades smoothly via the
+   existing .mic-ring transition; calm again during gated silence. */
+.mic-ring.active.voice {
+    border-color: var(--accent-soft);
+    box-shadow: 0 0 64px var(--accent-glow), 0 0 24px var(--accent);
+}
+
+@keyframes ringPulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.06);
+        opacity: 0.7;
+    }
+}
+
+.mic-btn {
+    width: 128px;
+    height: 128px;
+    border-radius: 50%;
+    border: none;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 52px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition);
+    z-index: 1;
+    position: relative;
+    border: 1px solid var(--border-strong);
+}
+
+.mic-btn:active {
+    transform: scale(0.93);
+}
+
+.mic-btn.active {
+    background: linear-gradient(135deg, var(--accent), #8b7cf7);
+    color: white;
+    box-shadow: 0 8px 32px var(--accent-glow);
+    border-color: transparent;
+}
+
+.mic-btn.active.muted {
+    background: linear-gradient(135deg, var(--yellow), #f39c12);
+    color: #0a0a0f;
+    box-shadow: 0 8px 32px rgba(241, 196, 15, 0.3);
+}
+
+.mic-ring.active.muted {
+    border-color: var(--yellow);
+    box-shadow: 0 0 40px rgba(241, 196, 15, 0.3);
+}
+
+/* Primary state label under the mic button. app.js rewrites its text
+   ("Tap to start streaming", "Long press to mute", …), so it doubles as the
+   state readout and the hint. */
+.mic-hint {
+    margin-top: 20px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* ── VU meter ───────────────────────────────────────────── */
+
+.vu-container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 24px;
+}
+
+.vu-bar-wrapper {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-input);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.vu-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));
+    border-radius: 3px;
+    transition: width 60ms linear;
+}
+
+.vu-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+
+/* ── Quick actions ──────────────────────────────────────── */
 
 .toolbar {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     width: 100%;
-    justify-content: center;
 }
 
 .tool-btn {
-    background: rgba(255, 255, 255, 0.04);
+    flex: 1;
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--border);
     color: var(--text-secondary);
-    padding: 8px 16px;
-    border-radius: 100px;
-    font-size: 13px;
-    font-weight: 600;
+    padding: 13px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 700;
     cursor: pointer;
     transition: all var(--transition);
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
+    gap: 8px;
 }
 
 .tool-btn:hover {
@@ -304,21 +528,48 @@ body {
     color: var(--text-primary);
 }
 
-/* ── Settings Panel ────────────────────────────────────── */
+.tool-btn:active {
+    transform: scale(0.97);
+}
+
+.tool-btn.on {
+    border-color: var(--accent);
+    color: var(--accent-soft);
+    background: rgba(108, 99, 255, 0.10);
+}
+
+/* ── Settings panel ─────────────────────────────────────── */
 
 .settings-panel {
     width: 100%;
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.35s ease, opacity 0.35s ease, padding 0.35s ease;
     opacity: 0;
-    padding-bottom: 0;
+    transition: max-height 0.4s ease, opacity 0.35s ease;
 }
 
 .settings-panel.active {
-    max-height: 500px;
+    /* Tall enough for all groups including diagnostics; the panel itself scrolls
+       with the page, so an exact fit is unnecessary. */
+    max-height: 1600px;
     opacity: 1;
-    padding-bottom: 12px;
+}
+
+.settings-group {
+    margin-bottom: 18px;
+}
+
+.settings-group:last-child {
+    margin-bottom: 4px;
+}
+
+.settings-group-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-muted);
+    margin: 0 4px 10px;
 }
 
 .setting-row {
@@ -327,72 +578,46 @@ body {
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 18px 20px;
+    padding: 16px 18px;
     margin-bottom: 10px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
+}
+
+.setting-row:last-child {
+    margin-bottom: 0;
 }
 
 .setting-label {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 14px;
+    font-size: 14.5px;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--text-primary);
 }
 
 .setting-val {
     font-family: 'SF Mono', 'Menlo', monospace;
     font-size: 13px;
-    color: var(--accent);
+    font-weight: 600;
+    color: var(--accent-soft);
 }
 
 .setting-hint {
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 1.55;
     color: var(--text-muted);
 }
 
-/* Small dismissible "update available" bar pinned to the top. Intentionally thin
-   so it never covers the UI. */
-.update-banner {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    padding: 8px 16px;
-    background: var(--accent);
-    color: #fff;
-    font-size: 13px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-
-.update-banner a {
-    color: #fff;
-    font-weight: 600;
-    text-decoration: underline;
-}
-
-.update-dismiss {
-    background: none;
-    border: none;
-    color: #fff;
-    font-size: 15px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 2px 6px;
+.setting-hint code {
+    font-family: 'SF Mono', 'Menlo', monospace;
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 1px 6px;
     border-radius: 6px;
-}
-
-.update-dismiss:hover {
-    background: rgba(255, 255, 255, 0.2);
+    color: var(--text-secondary);
 }
 
 /* The value + reset-button pair on the right of each setting label. Replaces an
@@ -413,8 +638,8 @@ body {
 .toggle {
     position: relative;
     display: inline-block;
-    width: 48px;
-    height: 26px;
+    width: 50px;
+    height: 28px;
     flex-shrink: 0;
 }
 
@@ -431,17 +656,17 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 26px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-strong);
+    border-radius: 28px;
     transition: var(--transition);
 }
 
 .toggle-slider::before {
     content: '';
     position: absolute;
-    height: 20px;
-    width: 20px;
+    height: 22px;
+    width: 22px;
     left: 2px;
     bottom: 2px;
     background: var(--text-muted);
@@ -465,7 +690,7 @@ body {
     appearance: none;
     width: 100%;
     height: 8px;
-    background: var(--bg-primary);
+    background: var(--bg-input);
     border-radius: 4px;
     outline: none;
     /* Extra vertical padding for larger touch zone */
@@ -473,6 +698,7 @@ body {
     margin: 0;
     box-sizing: content-box;
     background-clip: content-box;
+    cursor: pointer;
 }
 
 .slider::-webkit-slider-thumb {
@@ -481,199 +707,118 @@ body {
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: var(--accent);
+    background: #fff;
+    border: 6px solid var(--accent);
     cursor: pointer;
-    box-shadow: 0 0 8px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 10px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .slider::-moz-range-thumb {
-    width: 28px;
-    height: 28px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    background: var(--accent);
+    background: #fff;
     cursor: pointer;
-    border: none;
-    box-shadow: 0 0 8px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
+    border: 6px solid var(--accent);
+    box-shadow: 0 0 10px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
-/* ── Mute Status ───────────────────────────────────────── */
+/* ── Diagnostics (moved out of the main view, into settings) ── */
 
-.status-badge.muted {
-    background: rgba(241, 196, 15, 0.12);
-    color: var(--yellow);
-}
-
-.mic-hint {
-    font-size: 11px;
-    color: var(--text-muted);
-    text-align: center;
-    margin-top: -12px;
-}
-
-/* ── Mic Button ─────────────────────────────────────────── */
-
-.mic-container {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 12px 0;
-}
-
-.mic-ring {
-    position: absolute;
-    width: 160px;
-    height: 160px;
-    border-radius: 50%;
-    border: 3px solid var(--border);
-    transition: all 0.6s ease;
-}
-
-.mic-ring.active {
-    border-color: var(--accent);
-    box-shadow: 0 0 40px var(--accent-glow);
-    animation: ringPulse 1.5s ease infinite;
-}
-
-/* Voice activity (gate open): brighten the ring's glow. Fades smoothly via the
-   existing .mic-ring transition; calm again during gated silence. */
-.mic-ring.active.voice {
-    border-color: #a78bfa;
-    box-shadow: 0 0 64px var(--accent-glow), 0 0 24px var(--accent);
-}
-
-@keyframes ringPulse {
-
-    0%,
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-
-    50% {
-        transform: scale(1.06);
-        opacity: 0.7;
-    }
-}
-
-.mic-btn {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    border: none;
-    background: var(--bg-card);
-    color: var(--text-secondary);
-    font-size: 48px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all var(--transition);
-    z-index: 1;
-    position: relative;
-}
-
-.mic-btn:active {
-    transform: scale(0.93);
-}
-
-.mic-btn.active {
-    background: linear-gradient(135deg, var(--accent), #8b7cf7);
-    color: white;
-    box-shadow: 0 8px 32px var(--accent-glow);
-}
-
-.mic-btn.active.muted {
-    background: linear-gradient(135deg, var(--yellow), #f39c12);
-    color: #0a0a0f;
-    box-shadow: 0 8px 32px rgba(241, 196, 15, 0.3);
-}
-
-.mic-ring.active.muted {
-    border-color: var(--yellow);
-    box-shadow: 0 0 40px rgba(241, 196, 15, 0.3);
-}
-
-/* ── VU Meter ───────────────────────────────────────────── */
-
-.vu-container {
-    width: 100%;
+.stats {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-}
-
-.vu-bar-wrapper {
-    width: 100%;
-    height: 6px;
-    background: var(--bg-primary);
-    border-radius: 3px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     overflow: hidden;
 }
 
-.vu-bar {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));
-    border-radius: 3px;
-    transition: width 60ms linear;
-}
-
-.vu-label {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    color: var(--text-muted);
-    font-weight: 500;
-}
-
-/* ── Stats ──────────────────────────────────────────────── */
-
-.stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    width: 100%;
-}
-
 .stat {
-    background: var(--bg-primary);
-    border-radius: var(--radius-sm);
-    padding: 14px;
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 18px;
+    border-bottom: 1px solid var(--border);
+}
+
+.stat:last-child {
+    border-bottom: none;
 }
 
 .stat-label {
-    font-size: 11px;
+    font-size: 12.5px;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     font-weight: 600;
 }
 
 .stat-value {
-    font-size: 20px;
+    font-size: 13.5px;
     font-weight: 700;
     font-family: 'SF Mono', 'Menlo', monospace;
+    color: var(--text-primary);
 }
 
 .stat-value.transport {
     font-size: 13px;
-    color: var(--accent);
+    color: var(--accent-soft);
 }
 
-/* ── Error Toast ────────────────────────────────────────── */
+/* ── Update banner ──────────────────────────────────────── */
+
+/* Small dismissible "update available" bar pinned to the top. Intentionally thin
+   so it never covers the UI. */
+.update-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 16px;
+    padding-top: calc(10px + env(safe-area-inset-top));
+    background: linear-gradient(135deg, var(--accent), #8b7cf7);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.update-banner a {
+    color: #fff;
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+.update-dismiss {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.update-dismiss:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Toast ──────────────────────────────────────────────── */
 
 .toast {
     position: fixed;
-    bottom: 40px;
+    bottom: calc(40px + env(safe-area-inset-bottom));
     left: 50%;
     transform: translateX(-50%) translateY(100px);
     background: var(--red);
     color: white;
-    padding: 12px 24px;
+    padding: 13px 24px;
     border-radius: var(--radius-sm);
     font-size: 14px;
     font-weight: 600;
@@ -686,6 +831,7 @@ body {
        translateX(-50%) above. */
     width: calc(100% - 32px);
     max-width: 500px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
 }
 
 .toast.show {
@@ -693,7 +839,7 @@ body {
     opacity: 1;
 }
 
-/* ── Eco Mode (Power Saver) ────────────────────────────── */
+/* ── Eco Mode (Power Saver) ─────────────────────────────── */
 
 .power-save-overlay {
     display: none;
@@ -743,26 +889,6 @@ body {
     margin-bottom: 32px;
 }
 
-.power-save-btn {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    padding: 8px 16px;
-    border-radius: 100px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition);
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.power-save-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--text-primary);
-}
-
 .btn-secondary {
     background: #111111;
     color: #666666;
@@ -784,6 +910,21 @@ body {
         justify-content: flex-start;
         padding-top: 30px;
         padding-bottom: 30px;
+    }
+
+    .hero {
+        padding: 24px 20px 20px;
+    }
+
+    .mic-btn {
+        width: 104px;
+        height: 104px;
+        font-size: 42px;
+    }
+
+    .mic-ring {
+        width: 140px;
+        height: 140px;
     }
 }
 

@@ -34,3 +34,5 @@ THIRD-PARTY-LICENSES.html
 .claude/*.local.json
 .claude/**/*.log
 CLAUDE.local.md
+# Prebuilt release binaries live on GitHub Releases, not in git
+dist/

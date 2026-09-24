@@ -1,29 +1,40 @@
-/* QuicMic phone UI — clean, organized, app-like.
-   All element IDs and JS-toggled classes are unchanged from the original design;
-   this file only re-presents them. */
+/* QuicMic phone UI — "Neon Arcade × Clean Minimal" theme.
+   Clean minimal layout first: same organized structure (top bar, hero mic card,
+   quick actions, grouped settings), generous whitespace, big touch targets.
+   Neon arcade accents on top: deep near-black background, electric cyan +
+   magenta neon glows on the key interactive elements (mic button, VU bar,
+   active toggles, primary buttons), arcade-chunky buttons that "press down",
+   and monospace display numerals for PIN/level readouts.
+   All element IDs and JS-toggled classes are unchanged — this file only
+   re-presents them. */
 
 :root {
-    --bg-primary: #0b0b12;
-    --bg-secondary: #101018;
-    --bg-card: #15151f;
-    --bg-glass: rgba(21, 21, 31, 0.72);
-    --bg-input: #0e0e15;
+    --bg-primary: #0a0a12;
+    --bg-secondary: #0e0e17;
+    --bg-card: #12121c;
+    --bg-glass: rgba(18, 18, 28, 0.82);
+    --bg-input: #0c0c14;
     --border: rgba(255, 255, 255, 0.07);
-    --border-strong: rgba(255, 255, 255, 0.12);
-    --text-primary: #ececf4;
-    --text-secondary: #9a9ab2;
-    --text-muted: #5d5d74;
-    --accent: #6c63ff;
-    --accent-soft: #a78bfa;
-    --accent-glow: rgba(108, 99, 255, 0.32);
-    --green: #2ecc71;
-    --green-glow: rgba(46, 204, 113, 0.28);
-    --red: #e74c3c;
-    --red-glow: rgba(231, 76, 60, 0.28);
-    --yellow: #f1c40f;
+    --border-strong: rgba(255, 255, 255, 0.13);
+    --text-primary: #f2f2fa;
+    --text-secondary: #a6a6c4;
+    --text-muted: #61617a;
+    --neon: #00e5ff;
+    /* electric cyan */
+    --neon-soft: #7df9ff;
+    --neon-glow: rgba(0, 229, 255, 0.35);
+    --magenta: #ff2ea6;
+    /* neon pink */
+    --magenta-glow: rgba(255, 46, 166, 0.30);
+    --green: #2ee66b;
+    --green-glow: rgba(46, 230, 107, 0.28);
+    --red: #ff4d4d;
+    --red-glow: rgba(255, 77, 77, 0.28);
+    --yellow: #ffd23f;
     --radius: 20px;
     --radius-sm: 14px;
     --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --mono: ui-monospace, 'SF Mono', 'Menlo', 'Cascadia Mono', monospace;
 }
 
 * {
@@ -48,8 +59,13 @@ body {
     -webkit-user-select: none;
     overflow-x: hidden;
     overflow-y: auto;
+    /* Faint arcade-cabinet grid plus soft neon ambience at the top. Kept very
+       subtle so the screen stays clean and readable. */
     background:
-        radial-gradient(600px 400px at 50% -80px, rgba(108, 99, 255, 0.10), transparent 70%),
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 44px),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 44px),
+        radial-gradient(480px 260px at 18% -60px, rgba(0, 229, 255, 0.10), transparent 70%),
+        radial-gradient(480px 260px at 82% -60px, rgba(255, 46, 166, 0.09), transparent 70%),
         var(--bg-primary);
 }
 
@@ -88,11 +104,12 @@ body {
     font-size: 30px;
     font-weight: 800;
     letter-spacing: -0.8px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+    background: linear-gradient(135deg, var(--neon), var(--magenta));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
     text-align: center;
+    filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.25));
 }
 
 .logo span {
@@ -109,10 +126,11 @@ body {
     font-size: 19px;
     font-weight: 800;
     letter-spacing: -0.5px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+    background: linear-gradient(135deg, var(--neon), var(--magenta));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.28));
 }
 
 /* ── Cards & buttons ────────────────────────────────────── */
@@ -128,7 +146,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 20px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
 .card-title {
@@ -136,36 +154,40 @@ body {
     font-weight: 700;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 1.2px;
+    letter-spacing: 2px;
     text-align: center;
 }
 
+/* Arcade-chunky button: a solid bottom edge that "presses in" on tap. */
 .btn {
     width: 100%;
     padding: 16px;
     border: none;
     border-radius: var(--radius-sm);
     font-size: 16px;
-    font-weight: 700;
-    letter-spacing: 0.2px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
     cursor: pointer;
-    transition: transform var(--transition), opacity var(--transition), box-shadow var(--transition);
+    transition: transform 0.08s ease, box-shadow 0.08s ease, opacity var(--transition);
     position: relative;
     overflow: hidden;
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--accent), #8b7cf7);
-    color: white;
-    box-shadow: 0 6px 24px var(--accent-glow);
+    background: linear-gradient(135deg, var(--neon), var(--magenta));
+    color: #06121a;
+    text-shadow: none;
+    box-shadow: 0 6px 0 rgba(0, 0, 0, 0.55), 0 0 28px var(--neon-glow);
 }
 
 .btn-primary:active {
-    transform: scale(0.97);
+    transform: translateY(5px);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55), 0 0 14px var(--neon-glow);
 }
 
 .btn-primary:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
     box-shadow: none;
 }
@@ -183,13 +205,13 @@ body {
 .pair-mark {
     width: 76px;
     height: 76px;
-    border-radius: 24px;
-    background: linear-gradient(135deg, var(--accent), #8b7cf7);
+    border-radius: 22px;
+    background: linear-gradient(135deg, var(--neon), var(--magenta));
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 36px;
-    box-shadow: 0 10px 32px var(--accent-glow);
+    box-shadow: 0 6px 0 rgba(0, 0, 0, 0.55), 0 0 36px var(--neon-glow), 0 0 72px var(--magenta-glow);
 }
 
 .pair-sub {
@@ -220,16 +242,18 @@ body {
     padding: 16px var(--pin-pad);
     padding-left: calc(var(--pin-pad) + var(--pin-gap));
     background: var(--bg-input);
-    border: 2px solid var(--border);
+    border: 2px solid var(--border-strong);
     border-radius: var(--radius-sm);
-    font-size: clamp(22px, 7.5vw, 32px);
+    font-size: clamp(24px, 8vw, 34px);
     font-weight: 700;
     letter-spacing: var(--pin-gap);
     text-align: left;
-    color: var(--text-primary);
+    color: var(--neon);
+    text-shadow: 0 0 14px var(--neon-glow);
     outline: none;
     transition: border-color var(--transition), box-shadow var(--transition);
-    font-family: 'SF Mono', 'Menlo', monospace;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
 }
 
 /* Once all six digits are in (required + pattern="[0-9]{6}" make the field :valid),
@@ -266,8 +290,8 @@ body {
 }
 
 .pin-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 4px var(--accent-glow);
+    border-color: var(--neon);
+    box-shadow: 0 0 0 4px rgba(0, 229, 255, 0.18), 0 0 24px var(--neon-glow);
 }
 
 .pin-input.error {
@@ -310,25 +334,28 @@ body {
     border-radius: 100px;
     font-size: 12.5px;
     font-weight: 700;
-    letter-spacing: 0.4px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
     border: 1px solid transparent;
+    font-family: var(--mono);
 }
 
 .status-badge.disconnected {
-    background: rgba(231, 76, 60, 0.10);
-    border-color: rgba(231, 76, 60, 0.22);
+    background: rgba(255, 77, 77, 0.10);
+    border-color: rgba(255, 77, 77, 0.30);
     color: var(--red);
 }
 
 .status-badge.connected {
-    background: rgba(46, 204, 113, 0.10);
-    border-color: rgba(46, 204, 113, 0.22);
-    color: var(--green);
+    background: rgba(0, 229, 255, 0.10);
+    border-color: rgba(0, 229, 255, 0.35);
+    color: var(--neon);
+    text-shadow: 0 0 10px var(--neon-glow);
 }
 
 .status-badge.muted {
-    background: rgba(241, 196, 15, 0.10);
-    border-color: rgba(241, 196, 15, 0.22);
+    background: rgba(255, 210, 63, 0.10);
+    border-color: rgba(255, 210, 63, 0.30);
     color: var(--yellow);
 }
 
@@ -337,6 +364,7 @@ body {
     height: 8px;
     border-radius: 50%;
     background: currentColor;
+    box-shadow: 0 0 8px currentColor;
 }
 
 .status-badge.connected .status-dot {
@@ -348,7 +376,7 @@ body {
     0%,
     100% {
         opacity: 1;
-        box-shadow: 0 0 0 0 var(--green-glow);
+        box-shadow: 0 0 0 0 var(--neon-glow);
     }
 
     50% {
@@ -363,6 +391,7 @@ body {
     align-items: center;
     padding: 36px 24px 30px;
     gap: 0;
+    border-color: rgba(0, 229, 255, 0.14);
 }
 
 .mic-container {
@@ -378,21 +407,22 @@ body {
     width: 172px;
     height: 172px;
     border-radius: 50%;
-    border: 3px solid var(--border);
+    border: 3px solid var(--border-strong);
     transition: all 0.6s ease;
 }
 
 .mic-ring.active {
-    border-color: var(--accent);
-    box-shadow: 0 0 40px var(--accent-glow);
+    border-color: var(--neon);
+    box-shadow: 0 0 44px var(--neon-glow), inset 0 0 24px rgba(0, 229, 255, 0.12);
     animation: ringPulse 1.5s ease infinite;
 }
 
-/* Voice activity (gate open): brighten the ring's glow. Fades smoothly via the
-   existing .mic-ring transition; calm again during gated silence. */
+/* Voice activity (gate open): switch the glow to magenta as the accent hit.
+   Fades smoothly via the existing .mic-ring transition; calm again during
+   gated silence. */
 .mic-ring.active.voice {
-    border-color: var(--accent-soft);
-    box-shadow: 0 0 64px var(--accent-glow), 0 0 24px var(--accent);
+    border-color: var(--magenta);
+    box-shadow: 0 0 72px var(--magenta-glow), 0 0 28px var(--neon);
 }
 
 @keyframes ringPulse {
@@ -409,44 +439,52 @@ body {
     }
 }
 
+/* Big chunky arcade button: a thick bottom edge, presses in on tap. */
 .mic-btn {
     width: 128px;
     height: 128px;
     border-radius: 50%;
-    border: none;
-    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    background: radial-gradient(circle at 50% 32%, #23232f, var(--bg-card) 70%);
     color: var(--text-secondary);
     font-size: 52px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all var(--transition);
+    transition: transform 0.08s ease, box-shadow 0.08s ease, background var(--transition);
     z-index: 1;
     position: relative;
-    border: 1px solid var(--border-strong);
+    box-shadow: 0 8px 0 rgba(0, 0, 0, 0.55), 0 14px 30px rgba(0, 0, 0, 0.5);
 }
 
 .mic-btn:active {
-    transform: scale(0.93);
+    transform: translateY(7px);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.5);
 }
 
 .mic-btn.active {
-    background: linear-gradient(135deg, var(--accent), #8b7cf7);
-    color: white;
-    box-shadow: 0 8px 32px var(--accent-glow);
-    border-color: transparent;
+    background: radial-gradient(circle at 50% 30%, #1a2b33, #0d1418 75%);
+    color: #fff;
+    border-color: var(--neon);
+    box-shadow: 0 8px 0 rgba(0, 0, 0, 0.55), 0 0 48px var(--neon-glow), 0 0 96px rgba(0, 229, 255, 0.15);
+}
+
+.mic-btn.active:active {
+    transform: translateY(7px);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55), 0 0 32px var(--neon-glow);
 }
 
 .mic-btn.active.muted {
-    background: linear-gradient(135deg, var(--yellow), #f39c12);
-    color: #0a0a0f;
-    box-shadow: 0 8px 32px rgba(241, 196, 15, 0.3);
+    background: radial-gradient(circle at 50% 30%, #2e2a12, #141207 75%);
+    color: #fff;
+    border-color: var(--yellow);
+    box-shadow: 0 8px 0 rgba(0, 0, 0, 0.55), 0 0 48px rgba(255, 210, 63, 0.35);
 }
 
 .mic-ring.active.muted {
     border-color: var(--yellow);
-    box-shadow: 0 0 40px rgba(241, 196, 15, 0.3);
+    box-shadow: 0 0 44px rgba(255, 210, 63, 0.35);
 }
 
 /* Primary state label under the mic button. app.js rewrites its text
@@ -455,7 +493,9 @@ body {
 .mic-hint {
     margin-top: 20px;
     font-size: 14.5px;
-    font-weight: 600;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
     color: var(--text-secondary);
     text-align: center;
 }
@@ -472,18 +512,21 @@ body {
 
 .vu-bar-wrapper {
     width: 100%;
-    height: 6px;
+    height: 8px;
     background: var(--bg-input);
-    border-radius: 3px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
     overflow: hidden;
 }
 
 .vu-bar {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));
+    /* Neon VU: cyan → magenta → hot white-pink as it peaks. */
+    background: linear-gradient(90deg, var(--neon), var(--magenta) 70%, #fff);
     border-radius: 3px;
     transition: width 60ms linear;
+    box-shadow: 0 0 12px var(--neon-glow);
 }
 
 .vu-label {
@@ -491,9 +534,10 @@ body {
     justify-content: space-between;
     font-size: 11px;
     color: var(--text-muted);
-    font-weight: 600;
-    letter-spacing: 0.4px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
     text-transform: uppercase;
+    font-family: var(--mono);
 }
 
 /* ── Quick actions ──────────────────────────────────────── */
@@ -504,38 +548,45 @@ body {
     width: 100%;
 }
 
+/* Chunky secondary arcade buttons: dark with a neon-lit active state. */
 .tool-btn {
     flex: 1;
     background: var(--bg-glass);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     color: var(--text-secondary);
     padding: 13px 16px;
     border-radius: var(--radius-sm);
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
     cursor: pointer;
-    transition: all var(--transition);
+    transition: transform 0.08s ease, box-shadow 0.08s ease, color var(--transition), border-color var(--transition);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.5);
 }
 
 .tool-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
     color: var(--text-primary);
+    border-color: rgba(0, 229, 255, 0.25);
 }
 
 .tool-btn:active {
-    transform: scale(0.97);
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
 }
 
 .tool-btn.on {
-    border-color: var(--accent);
-    color: var(--accent-soft);
-    background: rgba(108, 99, 255, 0.10);
+    border-color: var(--neon);
+    color: var(--neon);
+    text-shadow: 0 0 10px var(--neon-glow);
+    background: rgba(0, 229, 255, 0.08);
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.5), 0 0 20px var(--neon-glow);
 }
 
 /* ── Settings panel ─────────────────────────────────────── */
@@ -563,13 +614,28 @@ body {
     margin-bottom: 4px;
 }
 
+/* Arcade marquee touch: a small neon tick before each group title. */
 .settings-group-title {
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 1.2px;
-    color: var(--text-muted);
+    letter-spacing: 2px;
+    color: var(--neon);
+    text-shadow: 0 0 12px var(--neon-glow);
     margin: 0 4px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-group-title::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    background: var(--neon);
+    box-shadow: 0 0 10px var(--neon);
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+    flex-shrink: 0;
 }
 
 .setting-row {
@@ -598,11 +664,14 @@ body {
     color: var(--text-primary);
 }
 
+/* Monospace display readouts, glowing cyan like an arcade score display. */
 .setting-val {
-    font-family: 'SF Mono', 'Menlo', monospace;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
     font-size: 13px;
-    font-weight: 600;
-    color: var(--accent-soft);
+    font-weight: 700;
+    color: var(--neon);
+    text-shadow: 0 0 10px var(--neon-glow);
 }
 
 .setting-hint {
@@ -612,7 +681,7 @@ body {
 }
 
 .setting-hint code {
-    font-family: 'SF Mono', 'Menlo', monospace;
+    font-family: var(--mono);
     font-size: 11px;
     background: rgba(255, 255, 255, 0.06);
     padding: 1px 6px;
@@ -675,16 +744,18 @@ body {
 }
 
 .toggle input:checked+.toggle-slider {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: rgba(0, 229, 255, 0.18);
+    border-color: var(--neon);
+    box-shadow: 0 0 16px var(--neon-glow), inset 0 0 8px rgba(0, 229, 255, 0.25);
 }
 
 .toggle input:checked+.toggle-slider::before {
     transform: translateX(22px);
-    background: white;
+    background: var(--neon);
+    box-shadow: 0 0 12px var(--neon);
 }
 
-/* Slider — large touch-friendly design */
+/* Slider — large touch-friendly design, neon thumb. */
 .slider {
     -webkit-appearance: none;
     appearance: none;
@@ -707,20 +778,20 @@ body {
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: #fff;
-    border: 6px solid var(--accent);
+    background: #0a0a12;
+    border: 4px solid var(--neon);
     cursor: pointer;
-    box-shadow: 0 0 10px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 14px var(--neon-glow), 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .slider::-moz-range-thumb {
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: #fff;
+    background: #0a0a12;
     cursor: pointer;
-    border: 6px solid var(--accent);
-    box-shadow: 0 0 10px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.4);
+    border: 5px solid var(--neon);
+    box-shadow: 0 0 14px var(--neon-glow), 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 /* ── Diagnostics (moved out of the main view, into settings) ── */
@@ -751,18 +822,22 @@ body {
     font-size: 12.5px;
     color: var(--text-muted);
     font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
 }
 
 .stat-value {
     font-size: 13.5px;
     font-weight: 700;
-    font-family: 'SF Mono', 'Menlo', monospace;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
     color: var(--text-primary);
 }
 
 .stat-value.transport {
     font-size: 13px;
-    color: var(--accent-soft);
+    color: var(--neon);
+    text-shadow: 0 0 10px var(--neon-glow);
 }
 
 /* ── Update banner ──────────────────────────────────────── */
@@ -781,11 +856,11 @@ body {
     gap: 12px;
     padding: 10px 16px;
     padding-top: calc(10px + env(safe-area-inset-top));
-    background: linear-gradient(135deg, var(--accent), #8b7cf7);
+    background: linear-gradient(135deg, var(--magenta), #b31e75);
     color: #fff;
     font-size: 13px;
     font-weight: 600;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), 0 0 24px var(--magenta-glow);
 }
 
 .update-banner a {
@@ -816,8 +891,9 @@ body {
     bottom: calc(40px + env(safe-area-inset-bottom));
     left: 50%;
     transform: translateX(-50%) translateY(100px);
-    background: var(--red);
-    color: white;
+    background: #1a0a12;
+    border: 1px solid var(--magenta);
+    color: #fff;
     padding: 13px 24px;
     border-radius: var(--radius-sm);
     font-size: 14px;
@@ -831,7 +907,7 @@ body {
        translateX(-50%) above. */
     width: calc(100% - 32px);
     max-width: 500px;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 24px var(--magenta-glow);
 }
 
 .toast.show {
@@ -896,10 +972,15 @@ body {
     padding: 12px 24px;
     font-size: 14px;
     width: auto;
+    text-transform: none;
+    letter-spacing: 0.2px;
+    box-shadow: none;
 }
 
 .btn-secondary:active {
     background: #1a1a1a;
+    transform: none;
+    box-shadow: none;
 }
 
 /* ── Landscape Mobile Scroll Support ───────────────────── */
@@ -945,9 +1026,24 @@ body {
 }
 
 .reset-link:hover {
-    color: var(--accent);
+    color: var(--neon);
 }
 
 .reset-link:active {
     transform: scale(0.85);
+}
+
+/* ── Reduced motion ─────────────────────────────────────── */
+/* Respect users who ask for less animation: keep the neon, drop the motion. */
+@media (prefers-reduced-motion: reduce) {
+
+    .screen,
+    .mic-ring.active,
+    .status-badge.connected .status-dot {
+        animation: none;
+    }
+
+    .pin-input.error {
+        animation: none;
+    }
 }

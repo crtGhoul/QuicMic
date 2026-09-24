@@ -495,6 +495,8 @@ async function releaseWakeLock() {
 
 function toggleSettings() {
     settingsPanel.classList.toggle('active');
+    // Light up the Settings button (neon "on" state) while its panel is open.
+    settingsBtn.classList.toggle('on', settingsPanel.classList.contains('active'));
 }
 
 function toggleMute() {

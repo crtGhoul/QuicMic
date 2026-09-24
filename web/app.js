@@ -38,7 +38,7 @@ let isStreaming = false;     // The user intends to stream (mic is active).
 let isMuted = false;
 let isReconnecting = false;  // A reconnect cycle is currently in progress.
 let isConnecting = false;    // A transport connect attempt is in progress.
-let wasLongPressed = false;
+let isStarting = false;      // startStreaming() is running (renew + mic + transport).
 let transportType = 'none';
 let wtFallbackNotified = false;  // One-time WebSocket-fallback warning per stream.
 let isPowerSaveActive = false;
@@ -123,6 +123,18 @@ const lrReset = document.getElementById('lr-reset');
 const monitorRow = document.getElementById('monitor-row');
 const monitorToggle = document.getElementById('monitor-toggle');
 
+// Zero-UI additions: volume HUD, coach overlay, drawer controls, capture prefs.
+const volumeHud = document.getElementById('volume-hud');
+const volumeHudVal = document.getElementById('volume-hud-val');
+const coachOverlay = document.getElementById('coach-overlay');
+const coachDismiss = document.getElementById('coach-dismiss');
+const endBtn = document.getElementById('end-btn');
+const drawerStopBtn = document.getElementById('drawer-stop-btn');
+const drawerGrabber = document.getElementById('drawer-grabber');
+const muteToggle = document.getElementById('mute-toggle');
+const echoToggle = document.getElementById('echo-toggle');
+const micSelect = document.getElementById('mic-select');
+
 // ── Generic Helpers ───────────────────────────────────────────────────
 
 function sleep(ms) {
@@ -202,7 +214,6 @@ async function init() {
         }
     });
     maybeShowUpdateBanner();
-    micBtn.addEventListener('click', toggleMic);
     powerSaveBtn.addEventListener('click', togglePowerSave);
     exitPowerSaveBtn.addEventListener('click', togglePowerSave);
     // Tapping the black Eco Mode overlay brings the hint/controls back briefly.
@@ -211,30 +222,34 @@ async function init() {
     });
     settingsBtn.addEventListener('click', toggleSettings);
 
-    // Long-press mic button for mute toggle (500ms)
-    let muteTimer = null;
-    micBtn.addEventListener('pointerdown', () => {
-        wasLongPressed = false;
-        muteTimer = setTimeout(() => {
-            if (isStreaming) {
-                toggleMute();
-                wasLongPressed = true;
-                if (navigator.vibrate) {
-                    navigator.vibrate(50);
-                }
-            }
-            muteTimer = null;
-        }, 500);
+    // Zero-UI wiring: gestures on the main screen, drawer controls, coach overlay.
+    setupGestures();
+    endBtn.addEventListener('click', () => stopStreaming());
+    drawerStopBtn.addEventListener('click', () => {
+        stopStreaming();
+        closeDrawer();
     });
-    const cancelMuteTimer = () => {
-        if (muteTimer) {
-            clearTimeout(muteTimer);
-            muteTimer = null;
+    coachDismiss.addEventListener('click', dismissCoach);
+    muteToggle.addEventListener('change', onMuteToggle);
+    echoToggle.addEventListener('change', onEchoToggle);
+    micSelect.addEventListener('change', onMicSelect);
+    drawerGrabber.addEventListener('click', toggleSettings);
+    drawerGrabber.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleSettings();
         }
-    };
-    micBtn.addEventListener('pointerup', cancelMuteTimer);
-    micBtn.addEventListener('pointerleave', cancelMuteTimer);
-    micBtn.addEventListener('pointercancel', cancelMuteTimer);
+    });
+    micBtn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleMicTap();
+        }
+    });
+    // A long-press must not summon the touch context menu.
+    micBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Restore the capture prefs (echo cancellation toggle state).
+    echoToggle.checked = !!loadCapturePrefs().echoCancellation;
 
     // Settings controls
     ngSlider.addEventListener('input', () => {
@@ -304,6 +319,7 @@ async function init() {
             sessionToken = storedToken;
             pairScreen.classList.remove('active');
             mainScreen.classList.add('active');
+            maybeShowCoach();
             // Invalidate any stale zombie streams on the server immediately
             renewSessionToken();
         }
@@ -441,7 +457,15 @@ function revealEcoControls() {
 }
 
 function togglePowerSave() {
+    // Returns true when the mode actually changed; false when the request was
+    // refused (Eco while idle) so callers don't announce a change that never
+    // happened.
+    if (!isPowerSaveActive && !isStreaming) {
+        showToast('Start streaming to use Eco mode');
+        return false;
+    }
     isPowerSaveActive = !isPowerSaveActive;
+    powerSaveBtn.textContent = isPowerSaveActive ? '🌙 Eco Mode: On' : '🌙 Eco Mode';
     if (isPowerSaveActive) {
         powerSaveOverlay.classList.remove('dimmed');
         powerSaveOverlay.classList.add('active');
@@ -463,6 +487,7 @@ function togglePowerSave() {
         vuLevel.textContent = '0%';
         releaseWakeLock();
     }
+    return true;
 }
 
 async function acquireWakeLock() {
@@ -494,13 +519,28 @@ async function releaseWakeLock() {
 }
 
 function toggleSettings() {
-    settingsPanel.classList.toggle('active');
-    // Light up the Settings button (neon "on" state) while its panel is open.
-    settingsBtn.classList.toggle('on', settingsPanel.classList.contains('active'));
+    if (settingsPanel.classList.contains('active')) closeDrawer();
+    else openDrawer();
+}
+
+/** Slide the settings drawer up and sync its controls with live state. */
+function openDrawer() {
+    settingsPanel.classList.add('active');
+    settingsPanel.setAttribute('aria-hidden', 'false');
+    // Light up the bottom handle while the drawer is open.
+    settingsBtn.classList.add('on');
+    syncDrawerControls();
+}
+
+function closeDrawer() {
+    settingsPanel.classList.remove('active');
+    settingsPanel.setAttribute('aria-hidden', 'true');
+    settingsBtn.classList.remove('on');
 }
 
 function toggleMute() {
     isMuted = !isMuted;
+    muteToggle.checked = isMuted;
     if (isMuted) {
         micIcon.textContent = '🔇';
         statusText.textContent = 'Muted';
@@ -508,7 +548,7 @@ function toggleMute() {
         micBtn.classList.add('muted');
         micRing.classList.add('muted');
         micRing.classList.remove('voice');
-        micHint.textContent = 'Long press to unmute';
+        micHint.textContent = 'Tap to unmute';
         vuBar.style.width = '0%';
         vuLevel.textContent = '0%';
     } else {
@@ -517,7 +557,7 @@ function toggleMute() {
         statusBadge.className = 'status-badge connected';
         micBtn.classList.remove('muted');
         micRing.classList.remove('muted');
-        micHint.textContent = 'Long press to mute';
+        micHint.textContent = 'Tap to mute';
     }
     sendMuteToWorklet(); // tell the worklet to stop/resume processing
 }
@@ -677,6 +717,125 @@ function sendMuteToWorklet() {
     workletNode.port.postMessage({ type: 'mute', muted: isMuted });
 }
 
+/** Rebuild the capture graph with the current capture prefs (echo/device change). */
+async function rebuildCaptureGraph() {
+    teardownAudioGraph();
+    await setupAudioGraph();
+}
+
+/** Echo cancellation toggle: persisted, and takes effect immediately while streaming. */
+async function onEchoToggle() {
+    const prefs = loadCapturePrefs();
+    prefs.echoCancellation = echoToggle.checked;
+    saveCapturePrefs(prefs);
+    showToast(`Echo cancellation ${prefs.echoCancellation ? 'on' : 'off'}`);
+    if (isStreaming) {
+        try {
+            await rebuildCaptureGraph();
+        } catch (e) {
+            showToast('Could not restart the microphone');
+        }
+    }
+}
+
+/** Microphone picker: persisted; switches the live input while streaming. */
+async function onMicSelect() {
+    const prefs = loadCapturePrefs();
+    prefs.deviceId = micSelect.value || null;
+    saveCapturePrefs(prefs);
+    // Rebuild even when switching back to Default (deviceId null): the old
+    // device would otherwise keep streaming instead of the default input.
+    if (isStreaming) {
+        try {
+            await rebuildCaptureGraph();
+            showToast('Microphone switched');
+        } catch (e) {
+            showToast('Could not switch microphone');
+        }
+    }
+}
+
+/** Drawer mute switch mirrors the tap gesture. */
+function onMuteToggle() {
+    if (isStreaming && muteToggle.checked !== isMuted) toggleMute();
+}
+
+/**
+ * Fill the drawer's microphone picker. Device labels need mic permission, so the
+ * list is only populated while streaming; otherwise it stays on "Default".
+ */
+async function populateMicSelect() {
+    const saved = loadCapturePrefs().deviceId || '';
+    micSelect.innerHTML = '';
+    const def = document.createElement('option');
+    def.value = '';
+    def.textContent = 'Default';
+    micSelect.appendChild(def);
+    micSelect.disabled = true;
+    if (!isStreaming) return;
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        devices
+            .filter((d) => d.kind === 'audioinput')
+            .forEach((d, i) => {
+                const opt = document.createElement('option');
+                opt.value = d.deviceId;
+                opt.textContent = d.label || `Microphone ${i + 1}`;
+                micSelect.appendChild(opt);
+            });
+        micSelect.disabled = false;
+        if (saved) micSelect.value = saved;
+    } catch (e) {
+        console.warn('[settings] enumerateDevices failed:', e);
+    }
+}
+
+/** Sync the drawer controls with live state whenever the drawer opens. */
+function syncDrawerControls() {
+    muteToggle.checked = isMuted;
+    muteToggle.disabled = !isStreaming;
+    drawerStopBtn.disabled = !isStreaming;
+    echoToggle.checked = !!loadCapturePrefs().echoCancellation;
+    populateMicSelect();
+}
+
+let volumeHudTimer = null;
+
+/**
+ * Swipe-gesture volume: step the PC output volume, push it to the server (which
+ * also persists it to localStorage), and flash the HUD readout.
+ */
+function adjustVolume(delta) {
+    const cur = parseFloat(ovSlider.value) || 0;
+    const next = Math.min(5, Math.max(0, Math.round((cur + delta) * 10) / 10));
+    if (next === cur) {
+        showVolumeHud(cur); // at the limit: still acknowledge the swipe
+        return;
+    }
+    ovSlider.value = next;
+    ovValue.textContent = next.toFixed(1) + 'x';
+    updateServerSettings();
+    showVolumeHud(next);
+}
+
+function showVolumeHud(value) {
+    volumeHudVal.textContent = value.toFixed(1) + 'x';
+    volumeHud.classList.add('show');
+    if (volumeHudTimer) clearTimeout(volumeHudTimer);
+    volumeHudTimer = setTimeout(() => volumeHud.classList.remove('show'), 1200);
+}
+
+/** One-time coach overlay teaching the gestures; never shown again after dismiss. */
+function maybeShowCoach() {
+    if (localStorage.getItem('quicmic_coach_seen')) return;
+    coachOverlay.hidden = false;
+}
+
+function dismissCoach() {
+    coachOverlay.hidden = true;
+    localStorage.setItem('quicmic_coach_seen', '1');
+}
+
 // ── Pairing & Session Tokens ──────────────────────────────────────────
 
 /**
@@ -727,6 +886,7 @@ async function doPair() {
             localStorage.setItem('sessionToken', sessionToken);
             pairScreen.classList.remove('active');
             mainScreen.classList.add('active');
+            maybeShowCoach();
             // Push settings to server after pairing
             updateServerSettings();
             // The monitor flag lives only on the server — refresh the switch
@@ -746,20 +906,126 @@ async function doPair() {
 
 // ── Microphone Toggle ─────────────────────────────────────────────────
 
-async function toggleMic() {
-    if (wasLongPressed) {
-        wasLongPressed = false;
+// ── Zero-UI gestures ────────────────────────────────────────────────
+//
+// The giant mic button is the whole interface:
+//   tap         -> start streaming, or mute/unmute while streaming
+//   double-tap  -> same as a single tap (forgiving: the 2nd tap is swallowed)
+//   long-press  -> Eco mode on/off (with a confirming toast)
+//   swipe up/down anywhere -> PC output volume (brief HUD readout)
+//   swipe up from the bottom edge -> open the settings drawer
+//
+// Pointer Events cover touch and mouse alike. Interactive controls (buttons,
+// inputs, sliders, labels) keep their native behaviour — only the mic button
+// and empty screen area are gesture-driven. The drawer is a sibling overlay,
+// so its own scrolling is never disturbed by these handlers.
+const GESTURE_LONG_PRESS_MS = 600;
+const GESTURE_TAP_SLOP_PX = 14;
+const GESTURE_SWIPE_MIN_PX = 48;
+const GESTURE_DOUBLE_TAP_MS = 320;
+const DRAWER_EDGE_PX = 110;
+
+let gesture = null;
+let lastMicTapAt = 0;
+
+function setupGestures() {
+    mainScreen.addEventListener('pointerdown', (e) => {
+        if (gesture) return; // one gesture at a time
+        // Interactive controls keep native behaviour; the mic button's clicks do
+        // nothing (taps are handled below), so it is excluded from the filter.
+        if (e.target.closest('button:not(#mic-btn), input, a, select, textarea, label')) return;
+        const onMic = !!e.target.closest('#mic-btn');
+        gesture = {
+            id: e.pointerId,
+            x0: e.clientX,
+            y0: e.clientY,
+            onMic,
+            longFired: false,
+            moved: false,
+            timer: 0,
+        };
+        if (onMic) {
+            gesture.timer = setTimeout(() => {
+                gesture.longFired = true;
+                if (togglePowerSave()) {
+                    showToast(isPowerSaveActive ? 'Eco mode on' : 'Eco mode off');
+                    if (navigator.vibrate) navigator.vibrate(50);
+                }
+            }, GESTURE_LONG_PRESS_MS);
+        }
+    });
+
+    mainScreen.addEventListener('pointermove', (e) => {
+        if (!gesture || e.pointerId !== gesture.id) return;
+        if (Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) > GESTURE_TAP_SLOP_PX) {
+            gesture.moved = true;
+            clearTimeout(gesture.timer);
+        }
+    });
+
+    // pointerup/pointercancel live on `window`, not the main screen: a long-press
+    // can hide the main screen (Eco mode) before the pointer is released, and
+    // the gesture must still be cleared — otherwise every later gesture would
+    // be swallowed by the stale one.
+    window.addEventListener('pointerup', (e) => {
+        if (!gesture || e.pointerId !== gesture.id) return;
+        clearTimeout(gesture.timer);
+        const g = gesture;
+        gesture = null;
+        if (g.longFired) return; // the long-press already acted
+        const dx = e.clientX - g.x0;
+        const dy = e.clientY - g.y0;
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
+        if (!g.moved) {
+            if (g.onMic) handleMicTap();
+            return;
+        }
+        if (ady > GESTURE_SWIPE_MIN_PX && ady > adx * 1.4) {
+            const fromBottomEdge = g.y0 > window.innerHeight - DRAWER_EDGE_PX;
+            if (dy < 0 && fromBottomEdge && !settingsPanel.classList.contains('active')) {
+                openDrawer();
+            } else {
+                adjustVolume(dy < 0 ? 0.2 : -0.2);
+            }
+        }
+    });
+
+    window.addEventListener('pointercancel', () => {
+        if (gesture) {
+            clearTimeout(gesture.timer);
+            gesture = null;
+        }
+    });
+}
+
+/**
+ * A tap on the giant mic button: start streaming when idle, mute/unmute while
+ * streaming. The toggle fires instantly on the first tap; the second half of a
+ * double-tap is swallowed so a double-tap still nets exactly one toggle.
+ */
+function handleMicTap() {
+    if (isConnecting || isReconnecting || isStarting) return;
+    if (!isStreaming) {
+        startStreaming();
         return;
     }
-    if (isStreaming) {
-        stopStreaming();
-    } else {
-        await startStreaming();
-    }
+    const now = Date.now();
+    if (now - lastMicTapAt < GESTURE_DOUBLE_TAP_MS) return;
+    lastMicTapAt = now;
+    toggleMute();
 }
 
 async function startStreaming() {
+    if (isStarting) return; // a previous tap already kicked this off
+    isStarting = true;
     try {
+        // Show the Connecting state immediately: token renewal + mic setup +
+        // transport handshake can take a moment, and the pill is the only
+        // status readout on the Zero UI main screen. Any failure funnels
+        // through the catch below, which calls stopStreaming() and resets this.
+        statusBadge.className = 'status-badge connecting';
+        statusText.textContent = 'Connecting';
         // Renew the token first to clear any old/zombie session on the server.
         if (sessionToken) {
             const renewed = await renewToken();
@@ -799,7 +1065,10 @@ async function startStreaming() {
         micBtn.classList.add('active');
         micRing.classList.add('active');
         micIcon.textContent = '⏹';
-        micHint.textContent = 'Long press to mute';
+        micHint.textContent = 'Tap to mute';
+        endBtn.hidden = false;
+        drawerStopBtn.disabled = false;
+        muteToggle.disabled = false;
         setConnected(true);
 
     } catch (e) {
@@ -819,6 +1088,8 @@ async function startStreaming() {
             }
             showToast(errMsg || 'Connection failed');
         }
+    } finally {
+        isStarting = false;
     }
 }
 
@@ -845,7 +1116,11 @@ function stopStreaming() {
     micRing.classList.remove('voice');
     clearTimeout(voiceTimeout);
     micIcon.textContent = '🎙';
-    micHint.textContent = 'Tap to start streaming';
+    micHint.textContent = 'Tap to start';
+    endBtn.hidden = true;
+    drawerStopBtn.disabled = true;
+    muteToggle.disabled = true;
+    muteToggle.checked = false;
     setConnected(false);
     transportType = 'none';
     if (isPowerSaveActive) {
@@ -900,15 +1175,36 @@ function attachMicTrackHandlers() {
     };
 }
 
+/** Capture preferences (echo cancellation, chosen input device). Persisted
+ *  client-side only — the server never sees these, so they live in their own
+ *  localStorage key rather than the synced `quicmic_settings` object. */
+function loadCapturePrefs() {
+    try {
+        return Object.assign(
+            { echoCancellation: false, deviceId: null },
+            JSON.parse(localStorage.getItem('quicmic_capture') || '{}'),
+        );
+    } catch (e) {
+        return { echoCancellation: false, deviceId: null };
+    }
+}
+
+function saveCapturePrefs(prefs) {
+    localStorage.setItem('quicmic_capture', JSON.stringify(prefs));
+}
+
 /** The mic constraints, shared by the initial setup and the recovery ladder. */
-const MIC_CONSTRAINTS = {
-    audio: {
+function micConstraints() {
+    const prefs = loadCapturePrefs();
+    const audio = {
         channelCount: 1,
-        echoCancellation: false,
+        echoCancellation: !!prefs.echoCancellation,
         noiseSuppression: false,
         autoGainControl: false,
-    },
-};
+    };
+    if (prefs.deviceId) audio.deviceId = { exact: prefs.deviceId };
+    return { audio };
+}
 
 /**
  * Build the capture graph from scratch: getUserMedia -> AudioContext -> worklet.
@@ -917,7 +1213,21 @@ const MIC_CONSTRAINTS = {
  * worklet, which would otherwise come up at its defaults.
  */
 async function setupAudioGraph() {
-    micStream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+    try {
+        micStream = await navigator.mediaDevices.getUserMedia(micConstraints());
+    } catch (e) {
+        // The saved microphone may have been unplugged. Fall back to the default
+        // input rather than failing outright, and forget the stale device id.
+        if (e && e.name === 'OverconstrainedError') {
+            console.warn('[audio] saved microphone unavailable, falling back to default');
+            const prefs = loadCapturePrefs();
+            prefs.deviceId = null;
+            saveCapturePrefs(prefs);
+            micStream = await navigator.mediaDevices.getUserMedia(micConstraints());
+        } else {
+            throw e;
+        }
+    }
 
     audioContext = new AudioContext({ latencyHint: 'interactive' });
     // Diagnostic only. We deliberately do NOT recover from here: state changes fire in
@@ -1068,7 +1378,7 @@ async function recoverAudio() {
     rung('recovery 2/3: re-acquire microphone', 'recovery_reacquire');
     try {
         if (micStream) micStream.getTracks().forEach((t) => t.stop());
-        micStream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+        micStream = await navigator.mediaDevices.getUserMedia(micConstraints());
         attachMicTrackHandlers();
         if (micSource) micSource.disconnect();
         micSource = audioContext.createMediaStreamSource(micStream);
@@ -1526,6 +1836,8 @@ function updateVu(level) {
     if (now - lastVuUpdateTime > 100) {
         vuBar.style.width = `${level}%`;
         vuLevel.textContent = `${Math.round(level)}%`;
+        // Drive the giant button's glow so it feels alive with the voice.
+        micBtn.style.setProperty('--level', (level / 100).toFixed(2));
         lastVuUpdateTime = now;
     }
 }

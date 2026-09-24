@@ -28,22 +28,17 @@
 
     <!-- Pairing Screen -->
     <div id="pair-screen" class="screen active">
-        <div class="pair-hero">
-            <div class="pair-mark">🎙️</div>
+        <div class="pair-wrap">
+            <div class="pair-mark" aria-hidden="true">&#127908;</div>
             <div class="logo">
                 QuicMic
                 <span>Wireless Microphone</span>
             </div>
-        </div>
-
-        <div class="card">
-            <div class="card-title">Enter Pairing PIN</div>
             <input type="tel" id="pin-input" class="pin-input" maxlength="6" inputmode="numeric" pattern="[0-9]{6}"
-                required placeholder="——————" autocomplete="off" aria-label="6-digit pairing PIN">
-            <button id="pair-btn" class="btn btn-primary">Connect</button>
+                required placeholder="&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="off" aria-label="6-digit pairing PIN">
+            <button id="pair-btn" class="btn btn-primary btn-big">Connect</button>
+            <div class="pair-sub">The 6-digit PIN is shown in your computer&apos;s QuicMic window.</div>
         </div>
-
-        <div class="pair-sub">The 6-digit PIN is shown in your computer's QuicMic window.</div>
 
         <div id="server-lost" class="server-lost" role="alert" hidden>
             <div class="server-lost-msg">Connection to the server was lost.<br>Refresh the page to reconnect.</div>
@@ -51,26 +46,24 @@
         </div>
     </div>
 
-    <!-- Main Screen -->
+    <!-- Main Screen: Zero UI — one giant mic button, a status pill, gestures -->
     <div id="main-screen" class="screen">
-        <div class="topbar">
-            <div class="logo-small">QuicMic</div>
+        <div class="zero-top">
             <div id="status-badge" class="status-badge disconnected" role="status" aria-live="polite">
                 <div class="status-dot" aria-hidden="true"></div>
                 <span id="status-text">Idle</span>
             </div>
         </div>
 
-        <div class="card hero">
+        <div class="zero-hero">
             <div class="mic-container">
-                <div id="mic-ring" class="mic-ring"></div>
-                <button id="mic-btn" class="mic-btn" aria-label="Start or stop microphone">
-                    <span id="mic-icon" aria-hidden="true">🎙</span>
+                <div id="mic-ring" class="mic-ring" aria-hidden="true"></div>
+                <button id="mic-btn" class="mic-btn" aria-label="Microphone: tap to start, mute, or unmute">
+                    <span id="mic-icon" aria-hidden="true">&#127908;</span>
                 </button>
             </div>
-            <div id="mic-hint" class="mic-hint">Tap to start streaming</div>
-
-            <div class="vu-container">
+            <div id="mic-hint" class="mic-hint">Tap to start</div>
+            <div class="vu-container" aria-hidden="true">
                 <div class="vu-bar-wrapper">
                     <div id="vu-bar" class="vu-bar"></div>
                 </div>
@@ -81,53 +74,122 @@
             </div>
         </div>
 
-        <div class="toolbar">
-            <button id="power-save-btn" class="tool-btn">🔋 Eco</button>
-            <button id="settings-btn" class="tool-btn">⚙️ Settings</button>
+        <div class="zero-foot">
+            <button id="end-btn" class="end-btn" hidden>End session</button>
+            <div class="swipe-hint">Swipe up from the bottom for settings &middot; swipe up/down for PC volume</div>
+            <button id="settings-btn" class="drawer-handle" aria-label="Open settings">
+                <span aria-hidden="true"></span>
+            </button>
         </div>
+    </div>
 
-        <!-- Settings Panel -->
-        <div id="settings-panel" class="settings-panel">
+    <!-- Volume HUD: brief readout for swipe volume gestures -->
+    <div id="volume-hud" class="volume-hud" aria-hidden="true">&#128266; <span id="volume-hud-val">1.0x</span></div>
+
+    <!-- Settings drawer: every feature, in Phone / PC / Diagnostics sections -->
+    <div id="settings-panel" class="drawer" aria-hidden="true">
+        <div id="drawer-grabber" class="drawer-grabber" role="button" tabindex="0" aria-label="Close settings">
+            <span aria-hidden="true"></span>
+        </div>
+        <div class="drawer-scroll">
+            <div class="drawer-title">Settings</div>
+
             <div class="settings-group">
-                <div class="settings-group-title">Microphone</div>
+                <div class="settings-group-title">Phone</div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Mic Gain</span>
+                        <div class="setting-control">
+                            <span id="gain-value" class="setting-val">1.0x</span>
+                            <button id="gain-reset" class="reset-link" title="Reset to default"
+                                aria-label="Reset gain to default">&#8635;</button>
+                        </div>
+                    </div>
+                    <input type="range" id="gain-slider" class="slider" min="0.2" max="3.0" step="0.1" value="1.0">
+                </div>
+
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Noise Gate</span>
                         <div class="setting-control">
                             <span id="ng-value" class="setting-val">-50 dB</span>
                             <button id="ng-reset" class="reset-link" title="Reset to default"
-                                aria-label="Reset noise gate to default">🔄</button>
+                                aria-label="Reset noise gate to default">&#8635;</button>
                         </div>
                     </div>
                     <input type="range" id="ng-slider" class="slider" min="-100" max="0" step="1" value="-50">
                 </div>
+
                 <div class="setting-row">
                     <div class="setting-label">
-                        <span>Gain</span>
+                        <span>Echo Cancellation</span>
                         <div class="setting-control">
-                            <span id="gain-value" class="setting-val">1.0x</span>
-                            <button id="gain-reset" class="reset-link" title="Reset to default"
-                                aria-label="Reset gain to default">🔄</button>
+                            <label class="toggle" title="Let the browser remove echo">
+                                <input type="checkbox" id="echo-toggle">
+                                <span class="toggle-slider"></span>
+                            </label>
                         </div>
                     </div>
-                    <input type="range" id="gain-slider" class="slider" min="0.2" max="3.0" step="0.1" value="1.0">
+                    <div class="setting-hint">Browser echo removal. Restarts the mic when changed while streaming.</div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Microphone</span>
+                    </div>
+                    <select id="mic-select" class="select" aria-label="Microphone input device">
+                        <option value="">Default</option>
+                    </select>
+                    <div class="setting-hint">Start streaming to list the available microphones.</div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Latency Recovery</span>
+                        <div class="setting-control">
+                            <span id="lr-value" class="setting-val">150 ms</span>
+                            <button id="lr-reset" class="reset-link" title="Reset to default"
+                                aria-label="Reset latency recovery to default">&#8635;</button>
+                        </div>
+                    </div>
+                    <input type="range" id="lr-slider" class="slider" min="0" max="500" step="10" value="150">
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <span>Muted</span>
+                        <div class="setting-control">
+                            <label class="toggle" title="Mute the microphone">
+                                <input type="checkbox" id="mute-toggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-row">
+                    <button id="power-save-btn" class="btn btn-secondary btn-block">&#127769; Eco Mode</button>
                 </div>
             </div>
 
             <div class="settings-group">
-                <div class="settings-group-title">Output</div>
+                <div class="settings-group-title">PC</div>
+
                 <div class="setting-row">
                     <div class="setting-label">
                         <span>Output Volume</span>
                         <div class="setting-control">
                             <span id="ov-value" class="setting-val">1.0x</span>
                             <button id="ov-reset" class="reset-link" title="Reset to default"
-                                aria-label="Reset output volume to default">🔄</button>
+                                aria-label="Reset output volume to default">&#8635;</button>
                         </div>
                     </div>
                     <input type="range" id="ov-slider" class="slider" min="0" max="5" step="0.1" value="1.0">
-                    <div class="setting-hint">PC-side volume, applied after your mic audio reaches the computer.</div>
+                    <div class="setting-hint">PC-side volume, applied after your mic audio reaches the computer. Tip:
+                        swipe up / down anywhere on the main screen to change it.</div>
                 </div>
+
                 <div class="setting-row" id="monitor-row">
                     <div class="setting-label">
                         <span>Monitor (hear yourself)</span>
@@ -138,23 +200,9 @@
                             </label>
                         </div>
                     </div>
-                    <div class="setting-hint">Plays your mic through the PC's speakers/headphones. Needs the server
-                        started with <code>--monitor-device</code>. ⚠ Speakers can feed back — use headphones.</div>
-                </div>
-            </div>
-
-            <div class="settings-group">
-                <div class="settings-group-title">Connection</div>
-                <div class="setting-row">
-                    <div class="setting-label">
-                        <span>Latency Recovery</span>
-                        <div class="setting-control">
-                            <span id="lr-value" class="setting-val">150 ms</span>
-                            <button id="lr-reset" class="reset-link" title="Reset to default"
-                                aria-label="Reset latency recovery to default">🔄</button>
-                        </div>
-                    </div>
-                    <input type="range" id="lr-slider" class="slider" min="0" max="500" step="10" value="150">
+                    <div class="setting-hint">Plays your mic through the PC&apos;s speakers/headphones. Needs the server
+                        started with <code>--monitor-device</code>; the device itself is chosen at server startup and
+                        can&apos;t be switched here. &#9888; Speakers can feed back &mdash; use headphones.</div>
                 </div>
             </div>
 
@@ -163,15 +211,15 @@
                 <div class="stats">
                     <div class="stat">
                         <span class="stat-label">Transport</span>
-                        <span id="stat-transport" class="stat-value transport">—</span>
+                        <span id="stat-transport" class="stat-value transport">&mdash;</span>
                     </div>
                     <div class="stat">
                         <span class="stat-label">API RTT (ping)</span>
-                        <span id="stat-ping" class="stat-value">—</span>
+                        <span id="stat-ping" class="stat-value">&mdash;</span>
                     </div>
                     <div class="stat">
                         <span class="stat-label">Buffer</span>
-                        <span id="stat-buffer" class="stat-value">—</span>
+                        <span id="stat-buffer" class="stat-value">&mdash;</span>
                     </div>
                     <div class="stat">
                         <span class="stat-label">Packets</span>
@@ -179,7 +227,7 @@
                     </div>
                     <div class="stat">
                         <span class="stat-label">Uptime</span>
-                        <span id="stat-uptime" class="stat-value">—</span>
+                        <span id="stat-uptime" class="stat-value">&mdash;</span>
                     </div>
                     <div class="stat">
                         <span class="stat-label">Loss</span>
@@ -187,6 +235,23 @@
                     </div>
                 </div>
             </div>
+
+            <button id="drawer-stop-btn" class="btn btn-danger btn-block">&#9209; Stop Streaming</button>
+            <div class="drawer-pad"></div>
+        </div>
+    </div>
+
+    <!-- First-run coach overlay -->
+    <div id="coach-overlay" class="coach-overlay" hidden>
+        <div class="coach-card">
+            <div class="coach-title">Your mic, one button</div>
+            <div class="coach-list">
+                <div class="coach-row"><span aria-hidden="true">&#127908;</span><div><b>Tap</b> the button to mute / unmute</div></div>
+                <div class="coach-row"><span aria-hidden="true">&#128266;</span><div><b>Swipe up / down</b> for PC volume</div></div>
+                <div class="coach-row"><span aria-hidden="true">&#127769;</span><div><b>Long-press</b> the button for Eco mode</div></div>
+                <div class="coach-row"><span aria-hidden="true">&#9881;</span><div><b>Swipe up from the bottom</b> for all settings</div></div>
+            </div>
+            <button id="coach-dismiss" class="btn btn-primary btn-block">Got it</button>
         </div>
     </div>
 

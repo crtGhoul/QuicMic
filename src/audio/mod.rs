@@ -11,7 +11,7 @@ mod processor;
 mod ring_buffer;
 
 pub use output::{list_output_devices, spawn_output_supervisor};
-pub use processor::{decode_into_ring, MAX_SAMPLES_PER_PACKET};
+pub use processor::{decode_into_rings, MAX_SAMPLES_PER_PACKET};
 pub use ring_buffer::RingBuffer;
 
 /// Maximum sample rate accepted from a client; anything higher is ignored.

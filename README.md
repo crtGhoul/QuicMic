@@ -21,6 +21,8 @@ QuicMic runs a tiny server on your computer and serves a web page to your phone.
 - **Secure pairing** — a random 6-digit PIN with brute-force lockout; the PIN never leaves the device in plaintext requests.
 - **QR-code setup** — scan the code printed in the terminal to open the page pre-filled with the PIN.
 - **Live audio controls** — noise gate, gain, and latency-recovery sliders, adjustable at runtime from the phone.
+- **Hear-yourself monitor** — start with `--monitor-device` (optionally with a device name) to also play your mic audio through the PC's speakers/headphones, with a mute toggle on the phone's settings panel. ⚠ Speakers + a live mic can feed back — headphones recommended.
+- **PC-side output volume** — an output-stage volume multiplier (0–5x, `--volume`) applied on the PC after resampling, with its own slider on the phone's settings panel.
 - **Eco Mode** — a black-screen overlay that keeps streaming alive while saving battery / preventing OLED burn-in.
 - **Resilient** — automatic reconnect on transient drops, instant handover on page refresh, and reliable shutdown detection.
 - **Single self-contained binary** — the web assets are embedded; no runtime dependencies.
@@ -206,6 +208,8 @@ Run `quicmic -h` for the full list. The main options:
 | `--pin <PIN>` | random | Use a fixed pairing PIN instead of a random 6-digit one. |
 | `--noise-gate <DB>` | `-50` | Initial noise-gate threshold in **dB**, from `-100` (Off) to `0`. Matches the web UI slider. Adjustable at runtime. |
 | `--gain <VALUE>` | `1.0` | Initial gain multiplier (`1.0` = unity). Adjustable at runtime. |
+| `--volume <VALUE>` | `1.0` | Initial PC-side output volume multiplier (0–5). Applied in the output stage after resampling. Adjustable at runtime. |
+| `--monitor-device [NAME]` | — | Enable a hear-yourself monitor: a second audio stream that plays your mic through a physical output device (host default, or matched as a case-insensitive substring like `--device`). Mute/unmute at runtime from the phone's settings panel. ⚠ Speakers + a live mic can feed back — headphones recommended. |
 | `--latency-threshold <MS>` | `150` | Initial latency-recovery threshold in milliseconds (`0` = off). Adjustable at runtime. |
 | `--dump-certs` | — | Write the generated certificate/key to `certs/` for debugging. |
 | `--no-update-check` | — | Disable the startup check for a newer release on GitHub (also via `QUICMIC_NO_UPDATE_CHECK`). |
@@ -226,6 +230,8 @@ From the phone's ⚙️ **Settings** panel (synced to the server live):
 
 - **Noise Gate** (−100 dB *Off* … 0 dB) — silences input below a threshold, with a short hold to avoid choppiness.
 - **Gain** (0.2×–3.0×) — boosts or attenuates the signal.
+- **Output Volume** (0×–5×) — PC-side volume applied after your mic audio reaches the computer (affects the virtual-device stream and the monitor).
+- **Monitor (hear yourself)** — toggle to hear your own mic through the PC's speakers/headphones. Only shown when the server was started with `--monitor-device`.
 - **Latency Recovery** (0 *Off* … 500 ms) — if the server's buffer grows past this, the oldest audio is skipped to catch back up.
 - **🔋 Eco Mode** — black-screen overlay; keeps streaming alive behind a screen wake lock.
 - **Mute** — long-press the mic button (with haptic feedback on devices that support the Vibration API, e.g. Android; iOS Safari does not).

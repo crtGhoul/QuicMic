@@ -133,7 +133,11 @@ async fn handle_ws_connection(
                             continue;
                         }
                         state.stream.packets_received.fetch_add(1, Ordering::Relaxed);
-                        audio::decode_into_ring(&data[4..], &state.stream.ring);
+                        audio::decode_into_rings(
+                            &data[4..],
+                            &state.stream.ring,
+                            state.stream.monitor_ring.as_deref(),
+                        );
                     }
                     Message::Close(_) => break,
                     _ => {}

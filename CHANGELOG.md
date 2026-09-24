@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Hear-yourself monitor: `--monitor-device [NAME]` starts a second supervised audio stream that plays your mic audio through a physical PC output device (host default, or substring match like `--device`), fed by its own ring buffer so the SPSC contract stays intact. Mute/unmute at runtime via `POST /api/monitor` or the toggle on the phone's settings panel. Warns about speaker feedback (headphones recommended).
+- PC-side output volume: `--volume` and a new "Output Volume" slider on the phone's settings panel, backed by `POST/GET /api/settings` (`output_volume`, clamped 0.0–5.0). Applied in the output stage after resampling, so it scales both the virtual-device and monitor streams.
+
 ## [0.2.4] - 2026-09-19
 
 ### Added

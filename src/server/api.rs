@@ -72,6 +72,7 @@ pub(super) struct SettingsUpdate {
     noise_gate: Option<f32>,
     gain: Option<f32>,
     latency_threshold: Option<u32>,
+    output_volume: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -79,6 +80,28 @@ pub(super) struct SettingsResponse {
     noise_gate: f32,
     gain: f32,
     latency_threshold: u32,
+    /// PC-side output volume multiplier (1.0 = unity).
+    output_volume: f32,
+    /// Whether a hear-yourself monitor stream exists (i.e. the server was
+    /// started with `--monitor-device`).
+    monitor_available: bool,
+    /// Whether the monitor stream is currently audible.
+    monitor_enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub(super) struct MonitorUpdate {
+    token: Option<String>,
+    enabled: bool,
+}
+
+#[derive(Serialize)]
+pub(super) struct MonitorResponse {
+    /// Whether a monitor stream exists (the server was started with
+    /// `--monitor-device`). Toggling is a no-op when this is false.
+    available: bool,
+    /// Current audibility of the monitor stream.
+    enabled: bool,
 }
 
 /// Generate a cryptographically random 64-char hex token.
@@ -269,11 +292,19 @@ pub(super) async fn handle_stats(State(state): State<AppState>, headers: HeaderM
 
 /// GET /api/settings — Current audio processing settings.
 pub(super) async fn handle_get_settings(State(state): State<AppState>) -> Json<SettingsResponse> {
-    Json(SettingsResponse {
+    Json(settings_response(&state))
+}
+
+/// Build the current settings response from shared state.
+fn settings_response(state: &AppState) -> SettingsResponse {
+    SettingsResponse {
         noise_gate: f32::from_bits(state.stream.noise_gate.load(Ordering::Relaxed)),
         gain: f32::from_bits(state.stream.gain.load(Ordering::Relaxed)),
         latency_threshold: state.stream.latency_threshold.load(Ordering::Relaxed),
-    })
+        output_volume: f32::from_bits(state.stream.output_volume.load(Ordering::Relaxed)),
+        monitor_available: state.stream.monitor_ring.is_some(),
+        monitor_enabled: state.stream.monitor_enabled.load(Ordering::Relaxed),
+    }
 }
 
 /// POST /api/settings — Update noise gate, gain and/or latency threshold dynamically.
@@ -319,11 +350,56 @@ pub(super) async fn handle_update_settings(
             .store(clamped, Ordering::Relaxed);
         info!(latency_threshold = clamped, "Latency threshold updated");
     }
+    if let Some(v) = body.output_volume {
+        let clamped = v.clamp(super::OUTPUT_VOLUME_MIN, super::OUTPUT_VOLUME_MAX);
+        state
+            .stream
+            .output_volume
+            .store(clamped.to_bits(), Ordering::Relaxed);
+        info!(output_volume = clamped, "Output volume updated");
+    }
 
-    Json(SettingsResponse {
-        noise_gate: f32::from_bits(state.stream.noise_gate.load(Ordering::Relaxed)),
-        gain: f32::from_bits(state.stream.gain.load(Ordering::Relaxed)),
-        latency_threshold: state.stream.latency_threshold.load(Ordering::Relaxed),
+    Json(settings_response(&state)).into_response()
+}
+
+/// POST /api/monitor — Mute/unmute the hear-yourself monitor stream.
+///
+/// Requires a valid session token in the body (same as `POST /api/settings`).
+/// The monitor stream itself is created at startup via `--monitor-device`; this
+/// only toggles whether it is audible. When no monitor stream exists
+/// (`available: false`) the toggle is accepted but is a no-op.
+pub(super) async fn handle_monitor(
+    State(state): State<AppState>,
+    Json(body): Json<MonitorUpdate>,
+) -> Response {
+    let authorized = {
+        let guard = state.stream.session_token.lock();
+        match (guard.as_ref(), body.token.as_ref()) {
+            (Some(expected), Some(provided)) => {
+                super::constant_time_eq(expected.as_bytes(), provided.as_bytes())
+            }
+            _ => false,
+        }
+    };
+    if !authorized {
+        return (StatusCode::UNAUTHORIZED, "Invalid or missing token").into_response();
+    }
+
+    let available = state.stream.monitor_ring.is_some();
+    if available {
+        state
+            .stream
+            .monitor_enabled
+            .store(body.enabled, Ordering::Relaxed);
+        info!(
+            "Hear-yourself monitor {}",
+            if body.enabled { "unmuted" } else { "muted" }
+        );
+    }
+
+    Json(MonitorResponse {
+        available,
+        enabled: state.stream.monitor_enabled.load(Ordering::Relaxed),
     })
     .into_response()
 }

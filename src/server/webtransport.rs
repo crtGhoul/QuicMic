@@ -306,7 +306,11 @@ async fn handle_session(
                             }
                         }
 
-                        audio::decode_into_ring(&data[HEADER_SIZE..], &stream.ring);
+                        audio::decode_into_rings(
+                            &data[HEADER_SIZE..],
+                            &stream.ring,
+                            stream.monitor_ring.as_deref(),
+                        );
                     }
                     Err(e) => {
                         info!(error = %e, "Datagram stream ended");

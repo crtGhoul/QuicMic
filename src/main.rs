@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use clap::Parser;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 /// Ring-buffer depth, sized at a nominal 48 kHz (the rate browsers capture at).
@@ -186,6 +186,23 @@ struct Cli {
     #[arg(long, default_value = "1.0")]
     gain: f32,
 
+    /// Initial PC-side output volume multiplier (1.0 = unity, e.g. 1.5).
+    /// Applied in the output stage after resampling, so it scales both the
+    /// virtual-device stream and the monitor stream (if enabled).
+    /// Can be adjusted at runtime from the phone's settings panel.
+    #[arg(long, default_value = "1.0")]
+    volume: f32,
+
+    /// Enable a hear-yourself monitor: a second audio stream that duplicates
+    /// your mic audio to a physical output device (speakers/headphones) so you
+    /// can hear yourself. Takes an optional device name (substring match, like
+    /// --device); with no name the host's default output device is used.
+    /// ⚠ Speakers + a live microphone can feed back — headphones recommended.
+    /// The monitor can be muted/unmuted at runtime from the phone's settings
+    /// panel, but the stream itself only exists when this flag is given.
+    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "NAME")]
+    monitor_device: Option<Option<String>>,
+
     /// Initial latency-recovery threshold in milliseconds (0 = disabled).
     /// When the output buffer grows past this, the oldest audio is skipped to
     /// catch up. Can be adjusted at runtime via the web UI.
@@ -275,6 +292,18 @@ async fn run() -> anyhow::Result<()> {
     let gain = Arc::new(AtomicU32::new(
         cli.gain.clamp(server::GAIN_MIN, server::GAIN_MAX).to_bits(),
     ));
+    let output_volume = Arc::new(AtomicU32::new(
+        cli.volume
+            .clamp(server::OUTPUT_VOLUME_MIN, server::OUTPUT_VOLUME_MAX)
+            .to_bits(),
+    ));
+    // The hear-yourself monitor stream only exists when --monitor-device was
+    // given; the phone UI can mute/unmute it at runtime via /api/monitor.
+    let monitor_enabled = Arc::new(AtomicBool::new(true));
+    let monitor_ring: Option<Arc<audio::RingBuffer>> = cli
+        .monitor_device
+        .as_ref()
+        .map(|_| Arc::new(audio::RingBuffer::new(RING_BUFFER_SAMPLES)));
     let latency_threshold = Arc::new(AtomicU32::new(
         cli.latency_threshold.min(server::LATENCY_THRESHOLD_MAX_MS),
     ));
@@ -294,8 +323,35 @@ async fn run() -> anyhow::Result<()> {
         ring.clone(),
         source_sample_rate.clone(),
         latency_threshold.clone(),
+        output_volume.clone(),
+        None,
         device_ok.clone(),
     )?;
+
+    // ── Hear-yourself monitor: a second supervised stream to a physical output
+    // device, fed by its own ring so the SPSC contract of each ring stays intact.
+    if let Some(name_opt) = &cli.monitor_device {
+        // `--monitor-device` with no name → the host's default output device;
+        // with a name → substring match, like `--device`.
+        let monitor_name: Option<String> = name_opt.clone().filter(|n| !n.is_empty());
+        let monitor_ok = Arc::new(AtomicBool::new(false));
+        audio::spawn_output_supervisor(
+            monitor_name,
+            monitor_ring
+                .clone()
+                .expect("monitor ring exists when --monitor-device is given"),
+            source_sample_rate.clone(),
+            latency_threshold.clone(),
+            output_volume.clone(),
+            Some(monitor_enabled.clone()),
+            monitor_ok,
+        )?;
+        warn!(
+            "Monitor enabled: your mic audio now also plays through a physical output \
+             device. Speakers + a live mic can feed back — headphones recommended. \
+             Mute it anytime from the phone's settings panel."
+        );
+    }
 
     // ── Generate TLS identity ───────────────────────────────────────────
     let (wt_identity, identity) = tls::generate_identity(lan_ip, cli.dump_certs)?;
@@ -348,6 +404,9 @@ async fn run() -> anyhow::Result<()> {
         noise_gate: noise_gate.clone(),
         gain: gain.clone(),
         latency_threshold: latency_threshold.clone(),
+        output_volume: output_volume.clone(),
+        monitor_ring: monitor_ring.clone(),
+        monitor_enabled: monitor_enabled.clone(),
         packets_received: packets_received.clone(),
         packets_lost: packets_lost.clone(),
         source_sample_rate: source_sample_rate.clone(),

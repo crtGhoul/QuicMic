@@ -114,9 +114,14 @@ const ngReset = document.getElementById('ng-reset');
 const gainSlider = document.getElementById('gain-slider');
 const gainValue = document.getElementById('gain-value');
 const gainReset = document.getElementById('gain-reset');
+const ovSlider = document.getElementById('ov-slider');
+const ovValue = document.getElementById('ov-value');
+const ovReset = document.getElementById('ov-reset');
 const lrSlider = document.getElementById('lr-slider');
 const lrValue = document.getElementById('lr-value');
 const lrReset = document.getElementById('lr-reset');
+const monitorRow = document.getElementById('monitor-row');
+const monitorToggle = document.getElementById('monitor-toggle');
 
 // ── Generic Helpers ───────────────────────────────────────────────────
 
@@ -252,6 +257,17 @@ async function init() {
         gainValue.textContent = '1.0x';
         updateServerSettings();
     });
+
+    ovSlider.addEventListener('input', () => {
+        ovValue.textContent = parseFloat(ovSlider.value).toFixed(1) + 'x';
+    });
+    ovSlider.addEventListener('change', updateServerSettings);
+    ovReset.addEventListener('click', () => {
+        ovSlider.value = 1.0;
+        ovValue.textContent = '1.0x';
+        updateServerSettings();
+    });
+    monitorToggle.addEventListener('change', updateMonitor);
 
     lrSlider.addEventListener('input', () => {
         const val = parseInt(lrSlider.value);
@@ -529,6 +545,18 @@ function applySettingsToUI(s) {
         gainSlider.value = s.gain;
         gainValue.textContent = parseFloat(s.gain).toFixed(1) + 'x';
     }
+    if (s.output_volume !== undefined) {
+        ovSlider.value = s.output_volume;
+        ovValue.textContent = parseFloat(s.output_volume).toFixed(1) + 'x';
+    }
+    if (s.monitor_available !== undefined) {
+        // Hide the monitor switch entirely when the server wasn't started with
+        // --monitor-device — there is no stream to toggle then.
+        monitorRow.style.display = s.monitor_available ? '' : 'none';
+    }
+    if (s.monitor_enabled !== undefined) {
+        monitorToggle.checked = !!s.monitor_enabled;
+    }
     if (s.latency_threshold !== undefined) {
         const lt = parseInt(s.latency_threshold);
         lrSlider.value = lt;
@@ -564,6 +592,7 @@ async function updateServerSettings() {
     const settings = {
         noise_gate: dbToNoiseGate(parseInt(ngSlider.value)),
         gain: parseFloat(gainSlider.value),
+        output_volume: parseFloat(ovSlider.value),
         latency_threshold: parseInt(lrSlider.value),
     };
 
@@ -580,6 +609,46 @@ async function updateServerSettings() {
     } catch (e) {
         showToast('Settings update failed');
     }
+}
+
+/** Toggle the hear-yourself monitor stream (POST /api/monitor). */
+async function updateMonitor() {
+    const enabled = monitorToggle.checked;
+    try {
+        const resp = await fetchWithTimeout('/api/monitor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: sessionToken, enabled }),
+        });
+        const result = await resp.json();
+        // The server is authoritative: reflect what it reports.
+        monitorToggle.checked = !!result.enabled;
+        if (!result.available) {
+            showToast('Monitor is not enabled on the server (needs --monitor-device)');
+        }
+    } catch (e) {
+        monitorToggle.checked = !enabled; // revert the switch on failure
+        showToast('Monitor toggle failed');
+    }
+}
+
+/**
+ * Refresh just the monitor switch from the server's authoritative state.
+ * Called after pairing: the monitor flag lives only on the server (it is not
+ * part of the localStorage settings the client pushes), so the switch would
+ * otherwise show a stale value when re-pairing with a still-running server.
+ */
+async function refreshMonitorState() {
+    try {
+        const resp = await fetchWithTimeout('/api/settings');
+        const s = await resp.json();
+        if (s.monitor_available !== undefined) {
+            monitorRow.style.display = s.monitor_available ? '' : 'none';
+        }
+        if (s.monitor_enabled !== undefined) {
+            monitorToggle.checked = !!s.monitor_enabled;
+        }
+    } catch (e) { /* server may not be reachable yet */ }
 }
 
 /**
@@ -658,6 +727,9 @@ async function doPair() {
             mainScreen.classList.add('active');
             // Push settings to server after pairing
             updateServerSettings();
+            // The monitor flag lives only on the server — refresh the switch
+            // from its authoritative state.
+            refreshMonitorState();
         } else {
             pinInput.classList.add('error');
             showToast(result.error || 'Incorrect PIN');

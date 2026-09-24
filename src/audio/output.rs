@@ -89,6 +89,45 @@ pub fn find_device(requested: Option<&str>) -> anyhow::Result<Device> {
     Ok(device)
 }
 
+/// Find a physical output device for the hear-yourself monitor stream.
+///
+/// A non-empty `requested` name is matched as a case-insensitive substring,
+/// exactly like `find_device`. An empty or missing name selects the host's
+/// default output device instead. This deliberately does NOT fall back to the
+/// platform virtual-mic device: mirroring the mic stream back into the virtual
+/// cable would just duplicate it into every app instead of letting the user
+/// hear it.
+pub fn find_monitor_device(requested: Option<&str>) -> anyhow::Result<Device> {
+    let host = cpal::default_host();
+
+    let device = match requested {
+        Some(name) if !name.is_empty() => host
+            .output_devices()?
+            .find(|d| {
+                d.description()
+                    .map(|desc| desc.name().to_lowercase().contains(&name.to_lowercase()))
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Monitor audio device '{}' not found. Available devices:\n{}",
+                    name,
+                    list_output_devices().join("\n  - ")
+                )
+            })?,
+        _ => host
+            .default_output_device()
+            .ok_or_else(|| anyhow::anyhow!("No default audio output device found"))?,
+    };
+
+    let device_name = device
+        .description()
+        .map(|desc| desc.name().to_string())
+        .unwrap_or_else(|_| "Unknown".to_string());
+    info!(device = %device_name, "Selected monitor audio output device");
+    Ok(device)
+}
+
 // ---------------------------------------------------------------------------
 // Catmull-Rom cubic resampler
 // ---------------------------------------------------------------------------
@@ -174,17 +213,23 @@ fn catmull_rom(p0: i16, p1: i16, p2: i16, p3: i16, t: f64) -> i16 {
 
 /// Core resampler: reads from the ring buffer, applies Catmull-Rom cubic
 /// interpolation to convert from the source sample rate to the output device's
-/// native rate, and duplicates mono to all output channels.
+/// native rate, applies the PC-side output volume, and duplicates mono to all
+/// output channels.
 ///
 /// `prebuffer_samples` is the low-water mark (in source samples) that gates the
 /// start of playback and recovery from an underrun; the caller derives it from
 /// `PREBUFFER_MS` and the active source rate so the cushion is rate-aware.
+/// `output_volume` is a linear multiplier (1.0 = unity) applied after
+/// resampling, so it scales both the virtual-device stream and the
+/// hear-yourself monitor stream; it is clamped back into the i16 range so a
+/// boost can never wrap around into distortion.
 fn write_data<T>(
     data: &mut [T],
     ring: &RingBuffer,
     channels: usize,
     ratio: f64,
     prebuffer_samples: usize,
+    output_volume: f32,
     state: &mut ResamplerState,
 ) where
     T: Sample + FromSample<i16>,
@@ -226,10 +271,12 @@ fn write_data<T>(
             }
         }
 
-        // Cubic interpolation across the window, between s1 and s2.
-        let sample_t = T::from_sample(catmull_rom(
-            state.s0, state.s1, state.s2, state.s3, state.frac,
-        ));
+        // Cubic interpolation across the window, between s1 and s2, then the
+        // PC-side output volume (clamped so a boost can't wrap around).
+        let sample = (catmull_rom(state.s0, state.s1, state.s2, state.s3, state.frac) as f32
+            * output_volume)
+            .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+        let sample_t = T::from_sample(sample);
         for ch in frame.iter_mut() {
             *ch = sample_t;
         }
@@ -238,7 +285,14 @@ fn write_data<T>(
 
 /// Open and start a cpal output stream for the named device (or the platform
 /// default virtual device). The stream reads from `ring`, resamples to the
-/// device's native rate, and duplicates mono to all channels.
+/// device's native rate, applies the PC-side output volume, and duplicates mono
+/// to all channels.
+///
+/// `output_volume` is the shared volume multiplier (f32 bits). `monitor_enabled`
+/// is `Some` only for the hear-yourself monitor stream: the device is then
+/// picked by `find_monitor_device` (a physical output), and while the flag reads
+/// `false` the callback drains the monitor ring and writes silence, so the phone
+/// UI can mute/unmute the monitor at runtime.
 ///
 /// `err_tx` is signalled from the stream's error callback when the device fails
 /// (e.g. it is disabled or removed), so the supervisor can rebuild the stream.
@@ -250,9 +304,14 @@ fn open_output_stream(
     ring: &Arc<RingBuffer>,
     source_sample_rate: &Arc<AtomicU32>,
     latency_threshold: &Arc<AtomicU32>,
+    output_volume: &Arc<AtomicU32>,
+    monitor_enabled: Option<&Arc<AtomicBool>>,
     err_tx: mpsc::Sender<()>,
 ) -> anyhow::Result<Stream> {
-    let device = find_device(device_name)?;
+    let device = match monitor_enabled {
+        Some(_) => find_monitor_device(device_name)?,
+        None => find_device(device_name)?,
+    };
     let default_config = device.default_output_config()?;
     let sample_format = default_config.sample_format();
     let config: StreamConfig = default_config.into();
@@ -275,12 +334,29 @@ fn open_output_stream(
             let ring = ring.clone();
             let source_rate = source_sample_rate.clone();
             let threshold = latency_threshold.clone();
+            let output_volume = output_volume.clone();
+            let monitor_enabled = monitor_enabled.cloned();
             let err_tx = err_tx.clone();
             let mut resampler = ResamplerState::new();
             let mut last_skip = std::time::Instant::now();
             device.build_output_stream(
                 config,
                 move |data: &mut [$T], _: &cpal::OutputCallbackInfo| {
+                    // Hear-yourself monitor mute, checked per callback so the phone
+                    // UI can toggle it at runtime. The ring is drained (not left to
+                    // overflow) and the resampler is re-armed, so unmuting resumes
+                    // live audio instead of a burst of stale buffered samples.
+                    if let Some(enabled) = &monitor_enabled {
+                        if !enabled.load(Ordering::Relaxed) {
+                            let mut discard = [0i16; 256];
+                            while ring.pop(&mut discard) > 0 {}
+                            resampler.is_prebuffering = true;
+                            resampler.window_reset();
+                            data.fill(<$T>::from_sample(0i16));
+                            return;
+                        }
+                    }
+
                     let active_rate = source_rate.load(Ordering::Relaxed).max(1) as usize;
                     // Prebuffer / latency-recovery target depth in source samples,
                     // derived from PREBUFFER_MS so the cushion is ~constant in time
@@ -326,7 +402,16 @@ fn open_output_stream(
                     }
 
                     let ratio = active_rate as f64 / target_rate;
-                    write_data(data, &ring, channels, ratio, prebuffer_samples, &mut resampler);
+                    let volume = f32::from_bits(output_volume.load(Ordering::Relaxed));
+                    write_data(
+                        data,
+                        &ring,
+                        channels,
+                        ratio,
+                        prebuffer_samples,
+                        volume,
+                        &mut resampler,
+                    );
                 },
                 move |err| {
                     error!("Audio output stream error: {}", err);
@@ -361,11 +446,18 @@ fn open_output_stream(
 /// A virtual device that is disabled or removed mid-session, then restored, thus
 /// recovers automatically with no restart. Blocks until the initial stream is
 /// built (or fails), so a bad `--device` name remains a fatal startup error.
+///
+/// `output_volume` is applied in the output stage of this stream. Passing
+/// `monitor_enabled` as `Some` turns this into the hear-yourself monitor
+/// supervisor: the device is picked by `find_monitor_device` (a physical output)
+/// and the flag gates audibility at runtime (see `open_output_stream`).
 pub fn spawn_output_supervisor(
     device_name: Option<String>,
     ring: Arc<RingBuffer>,
     source_sample_rate: Arc<AtomicU32>,
     latency_threshold: Arc<AtomicU32>,
+    output_volume: Arc<AtomicU32>,
+    monitor_enabled: Option<Arc<AtomicBool>>,
     device_ok: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     let (init_tx, init_rx) = mpsc::channel::<anyhow::Result<()>>();
@@ -383,6 +475,8 @@ pub fn spawn_output_supervisor(
                 &ring,
                 &source_sample_rate,
                 &latency_threshold,
+                &output_volume,
+                monitor_enabled.as_ref(),
                 err_tx.clone(),
             ) {
                 Ok(stream) => {
@@ -416,6 +510,8 @@ pub fn spawn_output_supervisor(
                         &ring,
                         &source_sample_rate,
                         &latency_threshold,
+                        &output_volume,
+                        monitor_enabled.as_ref(),
                         err_tx.clone(),
                     ) {
                         Ok(stream) => break stream,
@@ -457,7 +553,7 @@ mod tests {
 
         let mut state = ResamplerState::new();
         let mut out = [0i16; 480];
-        write_data(&mut out, &ring, 1, 1.0, 1440, &mut state);
+        write_data(&mut out, &ring, 1, 1.0, 1440, 1.0, &mut state);
 
         assert!(
             out.iter().all(|&s| s == 0),
@@ -475,7 +571,7 @@ mod tests {
 
         let mut state = ResamplerState::new();
         let mut out = [0i16; 480];
-        write_data(&mut out, &ring, 1, 1.0, 1440, &mut state);
+        write_data(&mut out, &ring, 1, 1.0, 1440, 1.0, &mut state);
 
         // At ratio 1.0 the cubic interpolation evaluates at t=0 every frame, so it
         // degenerates to a pure passthrough with a 2-sample group delay (from the
@@ -499,7 +595,7 @@ mod tests {
         // ratio 2.0: the source is consumed twice as fast as the output is
         // produced (e.g. a 96k source feeding a 48k device), so each output frame
         // advances the window by two source samples.
-        write_data(&mut out, &ring, 1, 2.0, 1440, &mut state);
+        write_data(&mut out, &ring, 1, 2.0, 1440, 1.0, &mut state);
 
         // At t=0 every frame the cubic degenerates to s1. After the 2-sample
         // startup delay, out[n] is the source decimated by two: out[n] = input[2n-1].
@@ -518,11 +614,52 @@ mod tests {
         let mut state = ResamplerState::new();
         let channels = 2;
         let mut out = [0i16; 480 * 2];
-        write_data(&mut out, &ring, channels, 1.0, 1440, &mut state);
+        write_data(&mut out, &ring, channels, 1.0, 1440, 1.0, &mut state);
 
         // Every stereo frame must carry identical samples on both channels.
         for frame in out.chunks_exact(channels) {
             assert_eq!(frame[0], frame[1]);
         }
+    }
+
+    #[test]
+    fn output_volume_scales_linearly() {
+        let ring = RingBuffer::new(4096);
+        ring.push(&[1000i16; 2000]);
+
+        let mut state = ResamplerState::new();
+        let mut out = [0i16; 480];
+        write_data(&mut out, &ring, 1, 1.0, 1440, 2.0, &mut state);
+
+        // At unity ratio the cubic degenerates to a passthrough with the 2-sample
+        // group delay, so out[n] = 2 * input[n-2] = 2000 past the delay.
+        assert_eq!(out[0], 0);
+        assert_eq!(out[1], 0);
+        assert!(out.iter().skip(2).all(|&s| s == 2000));
+    }
+
+    #[test]
+    fn output_volume_clamps_instead_of_wrapping() {
+        let ring = RingBuffer::new(4096);
+        ring.push(&[20000i16; 2000]);
+
+        let mut state = ResamplerState::new();
+        let mut out = [0i16; 480];
+        write_data(&mut out, &ring, 1, 1.0, 1440, 5.0, &mut state);
+
+        // 20000 * 5.0 = 100000 would overflow i16; it must clamp to i16::MAX.
+        assert!(out.iter().skip(2).all(|&s| s == i16::MAX));
+    }
+
+    #[test]
+    fn output_volume_zero_is_silence() {
+        let ring = RingBuffer::new(4096);
+        ring.push(&[20000i16; 2000]);
+
+        let mut state = ResamplerState::new();
+        let mut out = [0i16; 480];
+        write_data(&mut out, &ring, 1, 1.0, 1440, 0.0, &mut state);
+
+        assert!(out.iter().all(|&s| s == 0));
     }
 }

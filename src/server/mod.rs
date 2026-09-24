@@ -25,8 +25,8 @@ pub use state::{AppState, PairingThrottle, StreamState};
 pub use webtransport::run_webtransport_server;
 
 use api::{
-    handle_ca_download, handle_client_state, handle_get_settings, handle_info, handle_pair,
-    handle_renew, handle_stats, handle_update_settings,
+    handle_ca_download, handle_client_state, handle_get_settings, handle_info, handle_monitor,
+    handle_pair, handle_renew, handle_stats, handle_update_settings,
 };
 use assets::handle_static_assets;
 use websocket::handle_ws_upgrade;
@@ -39,6 +39,8 @@ pub(crate) const NOISE_GATE_MAX: f32 = 1.0;
 pub(crate) const GAIN_MIN: f32 = 0.2;
 pub(crate) const GAIN_MAX: f32 = 3.0;
 pub(crate) const LATENCY_THRESHOLD_MAX_MS: u32 = 500;
+pub(crate) const OUTPUT_VOLUME_MIN: f32 = 0.0;
+pub(crate) const OUTPUT_VOLUME_MAX: f32 = 5.0;
 
 /// Constant-time byte-slice equality, so response timing does not reveal how many
 /// leading bytes of a PIN or session token matched. Returns `false` immediately
@@ -65,6 +67,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/settings",
             get(handle_get_settings).post(handle_update_settings),
         )
+        .route("/api/monitor", post(handle_monitor))
         .route("/api/stats", get(handle_stats))
         .route("/api/client-state", post(handle_client_state))
         .route("/ws", get(handle_ws_upgrade))
@@ -174,7 +177,7 @@ pub async fn run_https_server(
 mod tests {
     use super::{
         build_router, AppState, PairingThrottle, StreamState, GAIN_MAX, LATENCY_THRESHOLD_MAX_MS,
-        NOISE_GATE_MAX,
+        NOISE_GATE_MAX, OUTPUT_VOLUME_MAX, OUTPUT_VOLUME_MIN,
     };
     use crate::audio::RingBuffer;
     use crate::tls::TlsIdentity;
@@ -205,6 +208,9 @@ mod tests {
             noise_gate: Arc::new(AtomicU32::new(0.003f32.to_bits())),
             gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             latency_threshold: Arc::new(AtomicU32::new(150)),
+            output_volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            monitor_ring: None,
+            monitor_enabled: Arc::new(AtomicBool::new(false)),
             packets_received: Arc::new(AtomicU64::new(0)),
             packets_lost: Arc::new(AtomicU64::new(0)),
             source_sample_rate: Arc::new(AtomicU32::new(48_000)),
@@ -395,6 +401,128 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(body_json(resp).await["gain"].as_f64().unwrap(), 2.0);
+    }
+
+    #[tokio::test]
+    async fn settings_include_output_volume_and_monitor_state() {
+        let state = test_state();
+        let resp = build_router(state)
+            .oneshot(get("/api/settings"))
+            .await
+            .unwrap();
+        let json = body_json(resp).await;
+        // GET stays open (read-only) and reports the new fields.
+        assert_eq!(json["output_volume"].as_f64().unwrap(), 1.0);
+        assert!(!json["monitor_available"].as_bool().unwrap());
+        assert!(!json["monitor_enabled"].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn settings_clamp_output_volume() {
+        let state = test_state();
+        *state.stream.session_token.lock() = Some("tok".to_string());
+        let resp = build_router(state)
+            .oneshot(post(
+                "/api/settings",
+                json!({ "token": "tok", "output_volume": 99.0 }),
+            ))
+            .await
+            .unwrap();
+        let json = body_json(resp).await;
+        assert_eq!(
+            json["output_volume"].as_f64().unwrap(),
+            OUTPUT_VOLUME_MAX as f64
+        );
+        // A negative value clamps to the floor instead of inverting the audio.
+        let state = test_state();
+        *state.stream.session_token.lock() = Some("tok".to_string());
+        let resp = build_router(state)
+            .oneshot(post(
+                "/api/settings",
+                json!({ "token": "tok", "output_volume": -3.0 }),
+            ))
+            .await
+            .unwrap();
+        let json = body_json(resp).await;
+        assert_eq!(
+            json["output_volume"].as_f64().unwrap(),
+            OUTPUT_VOLUME_MIN as f64
+        );
+    }
+
+    #[tokio::test]
+    async fn monitor_toggle_requires_token() {
+        let state = test_state();
+        *state.stream.session_token.lock() = Some("tok-abc".to_string());
+        let app = build_router(state);
+
+        // Missing token -> 401.
+        let resp = app
+            .clone()
+            .oneshot(post("/api/monitor", json!({ "enabled": true })))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // Wrong token -> 401.
+        let resp = app
+            .clone()
+            .oneshot(post(
+                "/api/monitor",
+                json!({ "enabled": true, "token": "wrong" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn monitor_toggle_is_noop_when_unavailable() {
+        // test_state() has no monitor ring: toggling reports available=false and
+        // leaves the enabled flag untouched.
+        let state = test_state();
+        *state.stream.session_token.lock() = Some("tok".to_string());
+        let resp = build_router(state)
+            .oneshot(post(
+                "/api/monitor",
+                json!({ "token": "tok", "enabled": true }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let json = body_json(resp).await;
+        assert!(!json["available"].as_bool().unwrap());
+        assert!(!json["enabled"].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn monitor_toggle_flips_enabled_flag() {
+        let mut state = test_state();
+        state.stream.monitor_ring = Some(Arc::new(RingBuffer::new(48_000)));
+        *state.stream.session_token.lock() = Some("tok".to_string());
+        let app = build_router(state);
+
+        let resp = app
+            .clone()
+            .oneshot(post(
+                "/api/monitor",
+                json!({ "token": "tok", "enabled": true }),
+            ))
+            .await
+            .unwrap();
+        let json = body_json(resp).await;
+        assert!(json["available"].as_bool().unwrap());
+        assert!(json["enabled"].as_bool().unwrap());
+
+        let resp = app
+            .oneshot(post(
+                "/api/monitor",
+                json!({ "token": "tok", "enabled": false }),
+            ))
+            .await
+            .unwrap();
+        let json = body_json(resp).await;
+        assert!(!json["enabled"].as_bool().unwrap());
     }
 
     #[tokio::test]

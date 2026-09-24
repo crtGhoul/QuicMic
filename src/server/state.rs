@@ -20,6 +20,20 @@ pub struct StreamState {
     pub noise_gate: Arc<AtomicU32>, // f32::to_bits(), 0.0 = disabled
     pub gain: Arc<AtomicU32>,       // f32::to_bits(), 1.0 = unity
     pub latency_threshold: Arc<AtomicU32>, // u32 milliseconds
+    /// PC-side output volume multiplier (f32 bits, 1.0 = unity). Applied in the
+    /// output stage after resampling, so it scales both the virtual-device
+    /// stream and the hear-yourself monitor stream. Adjustable at runtime via
+    /// `POST /api/settings` (and the phone's settings panel).
+    pub output_volume: Arc<AtomicU32>, // f32::to_bits(), 1.0 = unity
+    /// Second ring feeding the hear-yourself monitor stream, enabled at startup
+    /// via `--monitor-device`. `None` when the monitor is off; the decode hot
+    /// path pushes to both rings only when this is `Some`, keeping each ring's
+    /// SPSC contract intact.
+    pub monitor_ring: Option<Arc<RingBuffer>>,
+    /// Runtime mute for the monitor stream, toggled from the phone UI via
+    /// `POST /api/monitor`. Checked in the monitor output callback: `true` =
+    /// audible. Defaults to `true` when the monitor stream is created.
+    pub monitor_enabled: Arc<AtomicBool>,
     pub packets_received: Arc<AtomicU64>,
     pub packets_lost: Arc<AtomicU64>,
     pub source_sample_rate: Arc<AtomicU32>, // Client's actual capture rate

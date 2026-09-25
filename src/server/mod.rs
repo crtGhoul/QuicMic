@@ -21,7 +21,7 @@ mod state;
 mod websocket;
 mod webtransport;
 
-pub use state::{AppState, PairingThrottle, StreamState};
+pub use state::{AppState, MicRenameMode, PairingThrottle, StreamState};
 pub use webtransport::run_webtransport_server;
 
 use api::{
@@ -176,8 +176,8 @@ pub async fn run_https_server(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_router, AppState, PairingThrottle, StreamState, GAIN_MAX, LATENCY_THRESHOLD_MAX_MS,
-        NOISE_GATE_MAX, OUTPUT_VOLUME_MAX, OUTPUT_VOLUME_MIN,
+        build_router, AppState, MicRenameMode, PairingThrottle, StreamState, GAIN_MAX,
+        LATENCY_THRESHOLD_MAX_MS, NOISE_GATE_MAX, OUTPUT_VOLUME_MAX, OUTPUT_VOLUME_MIN,
     };
     use crate::audio::RingBuffer;
     use crate::tls::TlsIdentity;
@@ -218,6 +218,7 @@ mod tests {
             cancel_tx,
             is_shutdown: Arc::new(AtomicBool::new(false)),
             device_ok: Arc::new(AtomicBool::new(true)),
+            device_name: Arc::new(parking_lot::Mutex::new(None)),
         };
         AppState {
             stream,
@@ -232,6 +233,7 @@ mod tests {
             lan_ip: "192.168.1.42".to_string(),
             pairing_throttle: Arc::new(parking_lot::Mutex::new(PairingThrottle::default())),
             update_status: Arc::new(parking_lot::Mutex::new(None)),
+            mic_rename: MicRenameMode::Off,
         }
     }
 
@@ -305,6 +307,38 @@ mod tests {
         let json = body_json(resp).await;
         assert_eq!(json["success"], true);
         assert!(json["token"].is_string());
+    }
+
+    #[tokio::test]
+    async fn pair_stores_device_name_and_reports_mic_name() {
+        let mut state = test_state();
+        state.mic_rename = MicRenameMode::Auto;
+        let app = build_router(state.clone());
+        let resp = app
+            .oneshot(post(
+                "/api/pair",
+                json!({ "pin": "123456", "device_name": "  iPhone\u{0} " }),
+            ))
+            .await
+            .unwrap();
+        let json = body_json(resp).await;
+        assert_eq!(json["success"], true);
+        // Sanitized (trimmed, control char dropped) and echoed back as the
+        // Discord-visible name.
+        assert_eq!(json["mic_name"], "iPhone");
+        assert_eq!(state.stream.device_name.lock().as_deref(), Some("iPhone"));
+    }
+
+    #[tokio::test]
+    async fn pair_without_device_name_reports_no_mic_name_when_off() {
+        let app = build_router(test_state());
+        let resp = app
+            .oneshot(post("/api/pair", json!({ "pin": "123456" })))
+            .await
+            .unwrap();
+        let json = body_json(resp).await;
+        assert_eq!(json["success"], true);
+        assert!(json.get("mic_name").is_none());
     }
 
     #[tokio::test]

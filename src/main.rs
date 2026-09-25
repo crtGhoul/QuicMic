@@ -229,7 +229,11 @@ struct Cli {
     /// "CABLE Output (VB-Audio Virtual Cable)". Takes effect for newly
     /// opened apps (restart Discord if it is already running).
     /// Requires administrator rights. Windows only.
-    #[arg(long, value_name = "NAME")]
+    ///
+    /// Pass the literal name to rename once at startup, or `auto` to rename
+    /// on every pairing to the phone's own device name (set in the phone's
+    /// Settings → Device name), so Discord shows e.g. "iPhone" instead.
+    #[arg(long, value_name = "NAME|auto")]
     rename_mic: Option<String>,
 
     /// Disable the startup check for a newer release on GitHub.
@@ -286,24 +290,38 @@ async fn run() -> anyhow::Result<()> {
     // This only rewrites the capture endpoint's friendly name in the
     // registry — independent of the audio streams started below — so the
     // rename happens first and startup continues normally afterwards.
+    // `auto` defers the rename to pairing time (handled in the API layer),
+    // where the phone's reported device name is known.
     #[cfg(windows)]
-    if let Some(new_name) = &cli.rename_mic {
-        let new_name = new_name.trim();
-        if new_name.is_empty() {
-            anyhow::bail!("--rename-mic needs a non-empty name, e.g. --rename-mic \"QuicMic\"");
+    let mic_rename = match cli.rename_mic.as_deref().map(str::trim) {
+        None => server::MicRenameMode::Off,
+        Some(name) if name.is_empty() => {
+            anyhow::bail!(
+                "--rename-mic needs a non-empty name, e.g. --rename-mic \"QuicMic\" (or \"auto\")"
+            );
         }
-        // The capture twin of the default render device ("CABLE Input" ->
-        // "CABLE Output"), substring-matched case-insensitively.
-        let previous = audio::rename_capture_device("CABLE Output", new_name).map_err(|e| {
-            anyhow::anyhow!("{e}\nHint: right-click the exe -> Run as administrator, then retry.")
-        })?;
-        println!("Microphone renamed: '{previous}' -> '{new_name}'.");
-        println!("Restart Discord (if it is open) to see the new name in its input list.\n");
-    }
+        Some(name) if name.eq_ignore_ascii_case("auto") => server::MicRenameMode::Auto,
+        Some(name) => {
+            // The capture twin of the default render device ("CABLE Input" ->
+            // "CABLE Output"), substring-matched case-insensitively (the
+            // driver-set device description is matched too, so a repeat run
+            // still finds the endpoint after an earlier rename).
+            let previous = audio::rename_capture_device("CABLE Output", name).map_err(|e| {
+                anyhow::anyhow!(
+                    "{e}\nHint: right-click the exe -> Run as administrator, then retry."
+                )
+            })?;
+            println!("Microphone renamed: '{previous}' -> '{name}'.");
+            println!("Restart Discord (if it is open) to see the new name in its input list.\n");
+            server::MicRenameMode::Static(name.to_string())
+        }
+    };
     #[cfg(not(windows))]
     if cli.rename_mic.is_some() {
         anyhow::bail!("--rename-mic is only supported on Windows.");
     }
+    #[cfg(not(windows))]
+    let mic_rename = server::MicRenameMode::Off;
 
     set_terminal_title("QuicMic");
 
@@ -402,6 +420,10 @@ async fn run() -> anyhow::Result<()> {
     // transport handlers, read by the status monitor below.
     let transport: Arc<parking_lot::Mutex<String>> =
         Arc::new(parking_lot::Mutex::new(String::new()));
+    // Friendly name the paired phone reports for itself (e.g. "iPhone"); set
+    // by the pair handler, read by the status monitor below.
+    let device_name: Arc<parking_lot::Mutex<Option<String>>> =
+        Arc::new(parking_lot::Mutex::new(None));
     let source_sample_rate = Arc::new(AtomicU32::new(48000));
     let is_shutdown = Arc::new(AtomicBool::new(false));
     let device_ok = Arc::new(AtomicBool::new(false));
@@ -468,6 +490,7 @@ async fn run() -> anyhow::Result<()> {
         &identity.cert_hash_base64,
         &selected_device_name,
         discord_input.as_deref(),
+        &mic_rename,
     );
 
     // ── Connection monitor ──────────────────────────────────────────────
@@ -478,6 +501,7 @@ async fn run() -> anyhow::Result<()> {
     {
         let mon_connected = is_connected.clone();
         let mon_transport = transport.clone();
+        let mon_device_name = device_name.clone();
         tokio::spawn(async move {
             let mut was_connected = false;
             let mut last_transport = String::new();
@@ -489,7 +513,10 @@ async fn run() -> anyhow::Result<()> {
                     || (now_connected && now_transport != last_transport)
                 {
                     if now_connected {
-                        info!("Phone connected via {now_transport}");
+                        match mon_device_name.lock().clone() {
+                            Some(name) => info!("'{name}' connected via {now_transport}"),
+                            None => info!("Phone connected via {now_transport}"),
+                        }
                     } else if was_connected {
                         info!("Phone disconnected");
                     }
@@ -543,6 +570,7 @@ async fn run() -> anyhow::Result<()> {
         cancel_tx,
         is_shutdown: is_shutdown.clone(),
         device_ok: device_ok.clone(),
+        device_name: device_name.clone(),
     };
 
     // ── Build axum app ──────────────────────────────────────────────────
@@ -554,6 +582,7 @@ async fn run() -> anyhow::Result<()> {
         lan_ip: lan_ip.to_string(),
         pairing_throttle: Arc::new(parking_lot::Mutex::new(server::PairingThrottle::default())),
         update_status,
+        mic_rename,
     };
 
     let router = server::build_router(app_state);
@@ -699,6 +728,7 @@ fn print_banner(
     cert_hash: &str,
     audio_device: &str,
     discord_input: Option<&str>,
+    mic_rename: &server::MicRenameMode,
 ) {
     let version = format!("QuicMic v{}", env!("CARGO_PKG_VERSION"));
     let cert_prefix = if cert_hash.len() >= 20 {
@@ -733,6 +763,18 @@ fn print_banner(
         }
         None => {
             row("Discord mic:  (couldn't match — see --list-devices)");
+        }
+    }
+    match mic_rename {
+        server::MicRenameMode::Off => {}
+        server::MicRenameMode::Static(name) => {
+            row(&format!(
+                "Mic renamed:  {}",
+                truncate(name, W - 2 - "Mic renamed:  ".len())
+            ));
+        }
+        server::MicRenameMode::Auto => {
+            row("Mic rename:   auto (phone's device name)");
         }
     }
     row("");

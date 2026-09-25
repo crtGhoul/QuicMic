@@ -122,6 +122,11 @@ const lrValue = document.getElementById('lr-value');
 const lrReset = document.getElementById('lr-reset');
 const monitorRow = document.getElementById('monitor-row');
 const monitorToggle = document.getElementById('monitor-toggle');
+const pairHost = document.getElementById('pair-host');
+const qrDetected = document.getElementById('qr-detected');
+const dnInput = document.getElementById('dn-input');
+const dnReset = document.getElementById('dn-reset');
+const statMicname = document.getElementById('stat-micname');
 
 // ── Generic Helpers ───────────────────────────────────────────────────
 
@@ -280,8 +285,20 @@ async function init() {
         updateServerSettings();
     });
 
+    // Device name: plain text field — save on change (not every keystroke).
+    dnInput.addEventListener('change', updateServerSettings);
+    dnReset.addEventListener('click', () => {
+        dnInput.value = defaultDeviceName();
+        updateServerSettings();
+    });
+
     // Load saved settings from localStorage
     loadSettings();
+
+    // Which PC this page is talking to — the page is served by the server
+    // itself, so the hostname IS the server. Surfaces "wrong Wi-Fi" mistakes
+    // (phone on mobile data / guest network) before the user types a PIN.
+    pairHost.textContent = location.hostname || 'this PC';
 
     // Update stats display every second
     setInterval(updateStats, 1000);
@@ -293,6 +310,9 @@ async function init() {
         localStorage.removeItem('sessionToken');
         sessionToken = null;
         pinInput.value = hash;
+        // The PIN came from the QR code — say so, so the user knows they
+        // don't need to type anything.
+        qrDetected.hidden = false;
         // Clean up the hash so it doesn't show in the URL
         history.replaceState(null, '', location.pathname);
         // Auto-pair after a short delay (to let UI render)
@@ -304,6 +324,7 @@ async function init() {
             sessionToken = storedToken;
             pairScreen.classList.remove('active');
             mainScreen.classList.add('active');
+            statMicname.textContent = currentDeviceName();
             // Invalidate any stale zombie streams on the server immediately
             renewSessionToken();
         }
@@ -562,10 +583,45 @@ function applySettingsToUI(s) {
         lrSlider.value = lt;
         lrValue.textContent = lt === 0 ? 'Off' : `${lt} ms`;
     }
+    if (s.device_name !== undefined && s.device_name) {
+        dnInput.value = s.device_name;
+    }
+}
+
+/**
+ * Best-guess friendly name for this device, used as the default "Device name"
+ * setting (the name Discord/Windows can show for the mic). The user can always
+ * edit it — this just saves them typing "iPhone" on day one.
+ */
+function defaultDeviceName() {
+    const ua = navigator.userAgent || '';
+    if (/iPhone/i.test(ua)) return 'iPhone';
+    if (/iPad/i.test(ua)) return 'iPad';
+    if (/Android/i.test(ua)) {
+        // e.g. "...; Pixel 8) ..." or "...; SM-S918B) ..." — the model token.
+        const m = ua.match(/Android[^;)]*;\s*([^;)]+)/i);
+        if (m) {
+            const model = m[1].trim();
+            // Skip generic tokens like "Mobile".
+            if (model && !/^mobile$/i.test(model)) return model;
+        }
+        return 'Android';
+    }
+    if (/Macintosh|Mac OS/i.test(ua)) return 'Mac';
+    if (/Windows/i.test(ua)) return 'Windows PC';
+    if (/Linux/i.test(ua)) return 'Linux PC';
+    return 'Phone';
+}
+
+/** The effective device name: the setting, or the default when it is blank. */
+function currentDeviceName() {
+    const v = dnInput.value.trim();
+    return v || defaultDeviceName();
 }
 
 function loadSettings() {
     const saved = localStorage.getItem('quicmic_settings');
+    let applied = false;
     if (saved) {
         // The client (localStorage) is the source of truth, so a user's saved
         // settings survive a server restart: apply them and let the pair/renew sync
@@ -574,11 +630,18 @@ function loadSettings() {
         // clobber them with its CLI defaults.
         try {
             applySettingsToUI(JSON.parse(saved));
-            return;
+            applied = true;
         } catch (e) { /* corrupt entry — fall through to the server defaults */ }
     }
+    // First run (or an old save from before the device-name setting existed):
+    // seed the field with a sensible default so it is never blank.
+    if (!dnInput.value.trim()) {
+        dnInput.value = defaultDeviceName();
+    }
     // First run (nothing saved yet): adopt whatever the server currently has.
-    fetchSettings();
+    if (!applied) {
+        fetchSettings();
+    }
 }
 
 async function fetchSettings() {
@@ -594,6 +657,9 @@ async function updateServerSettings() {
         gain: parseFloat(gainSlider.value),
         output_volume: parseFloat(ovSlider.value),
         latency_threshold: parseInt(lrSlider.value),
+        // Client-side only (the server learns it at pair time), but persisted
+        // here alongside everything else so it survives reloads.
+        device_name: currentDeviceName(),
     };
 
     localStorage.setItem('quicmic_settings', JSON.stringify(settings));
@@ -604,7 +670,15 @@ async function updateServerSettings() {
         await fetchWithTimeout('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...settings, token: sessionToken }),
+            // device_name is client-side only — the audio settings endpoint
+            // doesn't know it, so don't send it there.
+            body: JSON.stringify({
+                noise_gate: settings.noise_gate,
+                gain: settings.gain,
+                output_volume: settings.output_volume,
+                latency_threshold: settings.latency_threshold,
+                token: sessionToken,
+            }),
         });
     } catch (e) {
         showToast('Settings update failed');
@@ -715,7 +789,7 @@ async function doPair() {
         const resp = await fetchWithTimeout('/api/pair', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pin }),
+            body: JSON.stringify({ pin, device_name: currentDeviceName() }),
         });
 
         const result = await resp.json();
@@ -725,6 +799,9 @@ async function doPair() {
             localStorage.setItem('sessionToken', sessionToken);
             pairScreen.classList.remove('active');
             mainScreen.classList.add('active');
+            // What Discord/Windows will show for this mic (when the server
+            // manages the name); otherwise the phone's own device name.
+            statMicname.textContent = result.mic_name || currentDeviceName();
             // Push settings to server after pairing
             updateServerSettings();
             // The monitor flag lives only on the server — refresh the switch
@@ -1246,6 +1323,11 @@ function teardownTransport() {
 
 // ── Transport Connection ──────────────────────────────────────────────
 
+// The transport that worked last time, so a phone on a UDP-blocked network
+// goes straight to WebSocket instead of burning a second on a doomed
+// WebTransport attempt every connect. Updated on every successful connect.
+const LAST_TRANSPORT_KEY = 'quicmic_last_transport';
+
 async function connectTransport() {
     // The actual sample rate the browser settled on (may differ from 48kHz).
     const actualSampleRate = audioContext ? audioContext.sampleRate : 48000;
@@ -1255,19 +1337,32 @@ async function connectTransport() {
     // attempt never spuriously triggers the reconnect machinery.
     isConnecting = true;
     try {
-        // Try WebTransport first (low-latency UDP/QUIC).
-        if ('WebTransport' in window) {
+        // Try the last working transport first (when known), then the normal
+        // priority order: WebTransport (low-latency UDP/QUIC), WebSocket (TCP).
+        const order = [];
+        const push = (t) => { if (!order.includes(t)) order.push(t); };
+        const last = localStorage.getItem(LAST_TRANSPORT_KEY);
+        if (last === 'WebTransport' || last === 'WebSocket') push(last);
+        if ('WebTransport' in window) push('WebTransport');
+        push('WebSocket');
+
+        let lastError = null;
+        for (const kind of order) {
             try {
-                await connectWebTransport(actualSampleRate);
+                if (kind === 'WebTransport') {
+                    await connectWebTransport(actualSampleRate);
+                } else {
+                    await connectWebSocket(actualSampleRate);
+                }
+                localStorage.setItem(LAST_TRANSPORT_KEY, kind);
                 return;
             } catch (e) {
-                console.warn('[transport] WebTransport failed, falling back to WebSocket:', e);
+                console.warn(`[transport] ${kind} failed, trying next:`, e);
                 teardownTransport();
+                lastError = e;
             }
         }
-
-        // Fallback to WebSocket (reliable TCP).
-        await connectWebSocket(actualSampleRate);
+        throw lastError || new Error('All transports failed');
     } finally {
         isConnecting = false;
     }

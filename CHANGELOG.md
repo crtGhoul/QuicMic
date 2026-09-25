@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-25
+
+### Added
+- Phone reports its device name at pairing: the phone UI has a new "Device name" setting (Settings → This device), pre-filled from the device type (e.g. "iPhone", "Pixel 8") and editable. The server logs it ("'iPhone' connected via WebTransport (QUIC/UDP)") and the phone's stats panel shows a "Mic name" row with the name Discord will list.
+- `--rename-mic auto` (Windows): renames the virtual cable's capture endpoint to the paired phone's device name on every pairing, so Discord's input list shows e.g. "iPhone" instead of "CABLE Output (VB-Audio Virtual Cable)". Requires administrator rights; restart Discord to see the new name. The static `--rename-mic "NAME"` behavior is unchanged.
+- Rename matching is now repeat-safe: the endpoint is matched by friendly name *or* the driver-set device description (which never changes), so renaming a second time still finds the same endpoint after the first rename rewrote its friendly name.
+- Pairing screen now shows which PC it is connecting to (catches "wrong Wi-Fi" mistakes), a "PIN filled in from QR code" badge after scanning, and numbered connect steps.
+
+### Changed
+- Settings panel is grouped into "This device" and "Audio" sections.
+- The client remembers the last working transport and tries it first on the next connect, so a phone on a UDP-blocked network goes straight to the WebSocket fallback instead of waiting out a doomed WebTransport attempt every time.
+
 ## [0.4.0] - 2026-09-25
 
 ### Added

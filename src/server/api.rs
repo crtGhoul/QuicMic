@@ -11,7 +11,10 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use super::state::AppState;
+use super::state::{AppState, MicRenameMode};
+#[cfg(windows)]
+use crate::audio::rename_capture_device;
+use crate::audio::sanitize_device_name;
 
 #[derive(Serialize)]
 pub(super) struct ServerInfo {
@@ -30,6 +33,10 @@ pub(super) struct ServerInfo {
 #[derive(Deserialize)]
 pub(super) struct PairRequest {
     pin: String,
+    /// Friendly name the phone reports for itself (e.g. "iPhone"). Optional —
+    /// older clients don't send it. Sanitized server-side before use.
+    #[serde(default)]
+    device_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -38,6 +45,11 @@ pub(super) struct PairResponse {
     token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    /// The name Discord/Windows will show for this mic, when the server is
+    /// managing it (static `--rename-mic` or `auto`). Lets the phone UI show
+    /// the user exactly what to pick in Discord's input list.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mic_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -157,6 +169,7 @@ pub(super) async fn handle_pair(
                     success: false,
                     token: None,
                     error: Some(format!("Too many attempts. Try again in {}s.", remaining)),
+                    mic_name: None,
                 }),
             )
                 .into_response();
@@ -177,6 +190,7 @@ pub(super) async fn handle_pair(
                 success: false,
                 token: None,
                 error: Some("Incorrect PIN".to_string()),
+                mic_name: None,
             })
             .into_response();
         }
@@ -191,12 +205,42 @@ pub(super) async fn handle_pair(
         *guard = Some(token.clone());
     }
 
-    info!("Device paired successfully");
+    // Remember the phone's self-reported name (if it sent one). On Windows
+    // with `--rename-mic auto` this becomes the mic's Discord-visible name,
+    // so Discord lists e.g. "iPhone" instead of the virtual cable's name.
+    let device_name = sanitize_device_name(body.device_name.as_deref());
+    if let Some(ref name) = device_name {
+        *state.stream.device_name.lock() = Some(name.clone());
+        info!("Device paired: {name}");
+        #[cfg(windows)]
+        if matches!(state.mic_rename, MicRenameMode::Auto) {
+            match rename_capture_device("CABLE Output", name) {
+                Ok(previous) => info!(
+                    "Microphone renamed: '{previous}' -> '{name}' (restart Discord to see it)"
+                ),
+                Err(e) => warn!(
+                    "Could not rename the mic to '{name}': {e:#} \
+                     (run QuicMic as administrator for automatic renaming)"
+                ),
+            }
+        }
+    } else {
+        info!("Device paired successfully");
+    }
+
+    // Tell the phone the name Discord/Windows will show for this mic, so the
+    // UI can show the user exactly what to pick in Discord's input list.
+    let mic_name = match &state.mic_rename {
+        MicRenameMode::Static(name) => Some(name.clone()),
+        MicRenameMode::Auto => device_name,
+        MicRenameMode::Off => None,
+    };
 
     Json(PairResponse {
         success: true,
         token: Some(token),
         error: None,
+        mic_name,
     })
     .into_response()
 }

@@ -49,6 +49,27 @@ pub struct StreamState {
     /// output device is lost (disabled/removed) and the supervisor is rebuilding it;
     /// surfaced to the client via `/api/stats` so the UI can warn the user.
     pub device_ok: Arc<AtomicBool>,
+    /// Friendly name the paired phone reported for itself (e.g. "iPhone",
+    /// "Pixel 8") — sent with the pair request. Shown in the terminal connect
+    /// log, and on Windows with `--rename-mic auto` it becomes the mic's
+    /// Discord-visible name. `None` until the first pairing.
+    pub device_name: Arc<parking_lot::Mutex<Option<String>>>,
+}
+
+/// How `--rename-mic` rewrites the Windows capture endpoint's friendly name
+/// (the name Discord and Windows show for the mic).
+// The `Static`/`Auto` variants are only constructed on Windows (and in tests),
+// so non-Windows builds would flag them as dead code.
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub enum MicRenameMode {
+    /// No renaming; Discord shows the virtual cable's own name.
+    Off,
+    /// Rename once at startup to this fixed name.
+    Static(String),
+    /// Rename on every pairing to the phone's reported device name
+    /// (e.g. the phone shows up in Discord as "iPhone").
+    Auto,
 }
 
 /// Consecutive failed PIN attempts (per client IP) before a lockout kicks in.
@@ -141,6 +162,10 @@ pub struct AppState {
     /// Latest newer release tag found by the startup update check, if any. Read by
     /// `/api/info` so the web UI can show a small "update available" banner.
     pub update_status: Arc<parking_lot::Mutex<Option<String>>>,
+    /// How the Windows capture endpoint's Discord-visible name is managed
+    /// (from `--rename-mic`). `Auto` renames it to the paired phone's device
+    /// name on every pairing; `Static` renames once at startup.
+    pub mic_rename: MicRenameMode,
 }
 
 /// Try to atomically claim the single-connection slot, retrying briefly to

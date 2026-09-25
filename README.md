@@ -60,7 +60,15 @@ QuicMic outputs to a virtual device. Install one and (optionally) pass its name 
 quicmic --rename-mic "QuicMic"
 ```
 
-Then restart Discord and pick **QuicMic** in Settings → Voice & Video → Input Device. The startup banner also tells you exactly which input name to pick.
+Or let it follow your phone automatically:
+
+```bash
+# Run as administrator — on every pairing, Discord shows the phone's own
+# device name (set on the phone under Settings → Device name, e.g. "iPhone")
+quicmic --rename-mic auto
+```
+
+Then restart Discord and pick the renamed mic in Settings → Voice & Video → Input Device. The startup banner also tells you exactly which input name to pick.
 
 </details>
 
@@ -213,7 +221,7 @@ Run `quicmic -h` for the full list. The main options:
 | `-p, --port <PORT>` | `8443` | Port used for **both** HTTPS (TCP) and WebTransport (UDP). Also via `QUICMIC_PORT`. |
 | `-d, --device <NAME>` | platform default | Output device, matched as a case-insensitive substring. Defaults: `CABLE Input` (Windows), `BlackHole` (macOS), `VirtualQuicMic` (Linux). If omitted and the terminal is interactive, a numbered picker is shown. Also via `QUICMIC_DEVICE`. |
 | `--list-devices` | — | List available audio output **and** input devices (the input names are what Discord shows as microphones) and exit. |
-| `--rename-mic <NAME>` | — | **Windows only.** Rename the virtual cable's capture endpoint (e.g. to `QuicMic`) so Discord lists your chosen name instead of `CABLE Output (VB-Audio Virtual Cable)`. Requires administrator rights; restart Discord afterwards. |
+| `--rename-mic <NAME\|auto>` | — | **Windows only.** Rename the virtual cable's capture endpoint so Discord lists your chosen name instead of `CABLE Output (VB-Audio Virtual Cable)`. A literal name renames once at startup; `auto` renames on every pairing to the phone's device name (Settings → Device name). Requires administrator rights; restart Discord afterwards. |
 | `--ip <IP>` | auto-detected | Override the auto-detected LAN IP address. |
 | `--pin <PIN>` | random | Use a fixed pairing PIN instead of a random 6-digit one. |
 | `--noise-gate <DB>` | `-50` | Initial noise-gate threshold in **dB**, from `-100` (Off) to `0`. Matches the web UI slider. Adjustable at runtime. |

@@ -102,8 +102,12 @@ pub fn suggest_discord_input(render_name: &str, input_devices: &[String]) -> Opt
 ///
 /// This writes `PKEY_Device_FriendlyName` under
 /// `HKLM\…\MMDevices\Audio\Capture\{guid}\Properties` for the first capture
-/// endpoint whose current friendly name contains `match_substring`
-/// (case-insensitive). Returns the previous name.
+/// endpoint whose friendly name *or* device description contains
+/// `match_substring` (case-insensitive). Checking the device description too
+/// matters because the friendly name is what this function rewrites: after
+/// one successful rename the old friendly name is gone, but the description
+/// (e.g. "VB-Audio Virtual Cable", set by the driver) never changes — so
+/// repeated renames keep finding the same endpoint. Returns the previous name.
 ///
 /// Requires administrator rights; without them the registry write fails and
 /// the error tells the user to re-run as administrator. Takes effect for
@@ -120,7 +124,9 @@ pub fn rename_capture_device(match_substring: &str, new_name: &str) -> anyhow::R
         })?;
 
     // PKEY_Device_FriendlyName = {A45C254E-DF1C-4EFD-8020-67D146A850E0},2
+    // PKEY_Device_DeviceDesc   = {A45C254E-DF1C-4EFD-8020-67D146A850E0},1
     const FRIENDLY_NAME_VALUE: &str = "{a45c254e-df1c-4efd-8020-67d146a850e0},2";
+    const DEVICE_DESC_VALUE: &str = "{a45c254e-df1c-4efd-8020-67d146a850e0},1";
     let needle = match_substring.to_lowercase();
 
     for guid in mmdevices.enum_keys().filter_map(Result::ok) {
@@ -132,7 +138,9 @@ pub fn rename_capture_device(match_substring: &str, new_name: &str) -> anyhow::R
             Ok(n) => n,
             Err(_) => continue,
         };
-        if current.to_lowercase().contains(&needle) {
+        // The description is optional — a missing value just means "no match".
+        let desc: String = props.get_value(DEVICE_DESC_VALUE).unwrap_or_default();
+        if endpoint_matches(&current, &desc, &needle) {
             props
                 .set_value(FRIENDLY_NAME_VALUE, &new_name)
                 .map_err(|e| {
@@ -148,6 +156,30 @@ pub fn rename_capture_device(match_substring: &str, new_name: &str) -> anyhow::R
         "No capture device matching '{match_substring}' found. Available capture devices:\n  - {}",
         list_input_devices().join("\n  - ")
     )
+}
+
+/// Whether a capture endpoint is the rename target: its friendly name or its
+/// driver-set device description contains the (already lowercased) needle.
+/// Pure so it can be unit-tested without touching the registry.
+#[cfg(windows)]
+fn endpoint_matches(friendly_name: &str, device_desc: &str, needle: &str) -> bool {
+    friendly_name.to_lowercase().contains(needle) || device_desc.to_lowercase().contains(needle)
+}
+
+/// Clean up a phone-reported device name for use as a Windows friendly name:
+/// trims whitespace, drops control characters, and caps the length. Returns
+/// `None` when nothing usable remains.
+pub fn sanitize_device_name(raw: Option<&str>) -> Option<String> {
+    const MAX_LEN: usize = 64;
+    let cleaned: String = raw?.trim().chars().filter(|c| !c.is_control()).collect();
+    // Truncate on a char boundary rather than slicing bytes.
+    let truncated: String = cleaned.chars().take(MAX_LEN).collect();
+    let truncated = truncated.trim().to_string();
+    if truncated.is_empty() {
+        None
+    } else {
+        Some(truncated)
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -644,8 +676,51 @@ pub fn spawn_output_supervisor(
 
 #[cfg(test)]
 mod tests {
-    use super::{suggest_discord_input, write_data, ResamplerState};
+    #[cfg(windows)]
+    use super::endpoint_matches;
+    use super::{sanitize_device_name, suggest_discord_input, write_data, ResamplerState};
     use crate::audio::RingBuffer;
+
+    #[test]
+    #[cfg(windows)]
+    fn rename_matches_friendly_name_or_stable_description() {
+        // Friendly name still has the needle: normal first-rename case.
+        assert!(endpoint_matches(
+            "CABLE Output (VB-Audio Virtual Cable)",
+            "VB-Audio Virtual Cable",
+            "cable output"
+        ));
+        // Friendly name was already rewritten by an earlier rename, but the
+        // driver-set description is unchanged: the repeat rename must still
+        // find the same endpoint.
+        assert!(endpoint_matches(
+            "iPhone",
+            "VB-Audio Virtual Cable",
+            "cable output"
+        ));
+        // Neither matches: leave this endpoint alone.
+        assert!(!endpoint_matches(
+            "Microphone (Realtek Audio)",
+            "Realtek Audio",
+            "cable output"
+        ));
+    }
+
+    #[test]
+    fn device_name_sanitizer_keeps_usable_names() {
+        assert_eq!(
+            sanitize_device_name(Some("  iPhone  ")),
+            Some("iPhone".to_string())
+        );
+        assert_eq!(sanitize_device_name(Some("   ")), None);
+        assert_eq!(sanitize_device_name(None), None);
+        assert_eq!(
+            sanitize_device_name(Some("a\u{0}b\u{7}c")),
+            Some("abc".to_string())
+        );
+        let long = "x".repeat(200);
+        assert_eq!(sanitize_device_name(Some(&long)).unwrap().len(), 64);
+    }
 
     #[test]
     fn discord_suggestion_mirrors_vb_cable_pair() {

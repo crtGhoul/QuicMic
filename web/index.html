@@ -35,9 +35,16 @@
 
         <div class="card">
             <div class="card-title">Enter Pairing PIN</div>
+            <div class="pair-target">Connecting to <span id="pair-host">this PC</span></div>
+            <div id="qr-detected" class="qr-detected" hidden>✓ PIN filled in from QR code</div>
             <input type="tel" id="pin-input" class="pin-input" maxlength="6" inputmode="numeric" pattern="[0-9]{6}"
                 required placeholder="——————" autocomplete="off" aria-label="6-digit pairing PIN">
             <button id="pair-btn" class="btn btn-primary">Connect</button>
+            <div class="pair-steps">
+                <div class="pair-step"><span class="pair-step-num">1</span>Scan the QR code on your PC screen</div>
+                <div class="pair-step"><span class="pair-step-num">2</span>The PIN fills in by itself</div>
+                <div class="pair-step"><span class="pair-step-num">3</span>Tap Connect, then the mic button</div>
+            </div>
         </div>
 
         <div id="server-lost" class="server-lost" role="alert" hidden>
@@ -64,6 +71,21 @@
 
         <!-- Settings Panel -->
         <div id="settings-panel" class="settings-panel">
+            <div class="setting-section">This device</div>
+            <div class="setting-row">
+                <div class="setting-label">
+                    <span>Device name</span>
+                    <div class="setting-control">
+                        <button id="dn-reset" class="reset-link" title="Reset to default"
+                            aria-label="Reset device name to default">🔄</button>
+                    </div>
+                </div>
+                <input type="text" id="dn-input" class="text-input" maxlength="64" placeholder="e.g. iPhone"
+                    autocomplete="off" aria-label="Device name shown for this microphone">
+                <div class="setting-hint">The name shown for this mic on the PC and in Discord's input list.
+                    Needs the server started with <code>--rename-mic auto</code> on Windows (as administrator).</div>
+            </div>
+            <div class="setting-section">Audio</div>
             <div class="setting-row">
                 <div class="setting-label">
                     <span>Noise Gate</span>
@@ -147,6 +169,10 @@
         </div>
 
         <div class="stats">
+            <div class="stat">
+                <span class="stat-label">Mic name</span>
+                <span id="stat-micname" class="stat-value">—</span>
+            </div>
             <div class="stat">
                 <span class="stat-label">Transport</span>
                 <span id="stat-transport" class="stat-value transport">—</span>

@@ -36,6 +36,12 @@ pub struct StreamState {
     pub monitor_enabled: Arc<AtomicBool>,
     pub packets_received: Arc<AtomicU64>,
     pub packets_lost: Arc<AtomicU64>,
+    /// Human-readable name of the transport carrying the current phone
+    /// session ("WebTransport" or "WebSocket"), empty when disconnected.
+    /// Set by the transport handlers on accept and cleared by the
+    /// `ConnectionGuard`; read by the terminal status monitor so a silent
+    /// fallback to the slower transport stays visible to the user.
+    pub transport: Arc<parking_lot::Mutex<String>>,
     pub source_sample_rate: Arc<AtomicU32>, // Client's actual capture rate
     pub cancel_tx: tokio::sync::broadcast::Sender<()>,
     pub is_shutdown: Arc<AtomicBool>,
@@ -154,20 +160,29 @@ pub(super) async fn acquire_connection_slot(is_connected: &AtomicBool) -> bool {
 }
 
 /// RAII guard that releases the single-connection slot when dropped, however
-/// the session task ends (completion, cancellation, or panic).
+/// the session task ends (completion, cancellation, or panic). Also clears
+/// the recorded transport name so the status monitor goes back to idle.
 pub(super) struct ConnectionGuard {
     is_connected: Arc<AtomicBool>,
+    transport: Arc<parking_lot::Mutex<String>>,
 }
 
 impl ConnectionGuard {
-    pub(super) fn new(is_connected: Arc<AtomicBool>) -> Self {
-        Self { is_connected }
+    pub(super) fn new(
+        is_connected: Arc<AtomicBool>,
+        transport: Arc<parking_lot::Mutex<String>>,
+    ) -> Self {
+        Self {
+            is_connected,
+            transport,
+        }
     }
 }
 
 impl Drop for ConnectionGuard {
     fn drop(&mut self) {
         self.is_connected.store(false, Ordering::SeqCst);
+        self.transport.lock().clear();
     }
 }
 
@@ -180,15 +195,21 @@ mod tests {
     #[tokio::test]
     async fn slot_acquires_and_guard_releases() {
         let flag = Arc::new(AtomicBool::new(false));
+        let transport = Arc::new(parking_lot::Mutex::new(String::new()));
         assert!(acquire_connection_slot(&flag).await);
         assert!(flag.load(Ordering::SeqCst));
         {
-            let _guard = ConnectionGuard::new(flag.clone());
+            let _guard = ConnectionGuard::new(flag.clone(), transport.clone());
+            transport.lock().push_str("WebTransport");
             assert!(flag.load(Ordering::SeqCst));
         }
         assert!(
             !flag.load(Ordering::SeqCst),
             "dropping the guard must release the slot"
+        );
+        assert!(
+            transport.lock().is_empty(),
+            "dropping the guard must clear the transport name"
         );
     }
 

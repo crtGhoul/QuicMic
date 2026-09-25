@@ -36,3 +36,6 @@ THIRD-PARTY-LICENSES.html
 CLAUDE.local.md
 # Prebuilt release binaries live on GitHub Releases, not in git
 dist/
+
+# Local toolchain config (linker paths etc.) — never commit; see AGENTS.md.
+.cargo/

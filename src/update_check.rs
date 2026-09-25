@@ -23,7 +23,7 @@ use tokio_rustls::TlsConnector;
 /// canonical repository name exactly: GitHub 301-redirects a wrong-case path to
 /// the canonical one, and `fetch_latest_tag` follows only a single redirect, so a
 /// mismatch would capture the case-fix redirect instead of the release tag.
-const REPO: &str = "Fix3dll/QuicMic";
+const REPO: &str = "crtGhoul/QuicMic";
 
 /// Overall budget for the whole check, so a slow or black-holed network can never
 /// keep the background task alive indefinitely.

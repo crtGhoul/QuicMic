@@ -213,6 +213,7 @@ mod tests {
             monitor_enabled: Arc::new(AtomicBool::new(false)),
             packets_received: Arc::new(AtomicU64::new(0)),
             packets_lost: Arc::new(AtomicU64::new(0)),
+            transport: Arc::new(parking_lot::Mutex::new(String::new())),
             source_sample_rate: Arc::new(AtomicU32::new(48_000)),
             cancel_tx,
             is_shutdown: Arc::new(AtomicBool::new(false)),

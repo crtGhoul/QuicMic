@@ -76,7 +76,17 @@ pub(super) async fn handle_ws_upgrade(
     // completes); moving the guard into it still releases the connection slot on
     // drop. Otherwise the slot would leak and lock out every future client until
     // the server restarts.
-    let guard = ConnectionGuard::new(state.stream.is_connected.clone());
+    // Record the transport name as well, so the terminal status line shows the
+    // phone is on the slower TCP fallback rather than QUIC.
+    state
+        .stream
+        .transport
+        .lock()
+        .replace_range(.., "WebSocket (TCP fallback)");
+    let guard = ConnectionGuard::new(
+        state.stream.is_connected.clone(),
+        state.stream.transport.clone(),
+    );
     ws.on_upgrade(move |socket| handle_ws_connection(socket, state, guard, cancel_rx))
 }
 

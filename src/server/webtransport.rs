@@ -233,7 +233,13 @@ async fn handle_session(
     // Claim the RAII slot guard immediately, so the connection slot is released on
     // every exit path from here on — an accept() error or a panic included —
     // rather than relying on a manual reset in each early-return branch.
-    let _guard = ConnectionGuard::new(stream.is_connected.clone());
+    // Record the transport too, so the terminal status line can show which
+    // path the phone is actually using (QUIC vs the TCP fallback).
+    stream
+        .transport
+        .lock()
+        .replace_range(.., "WebTransport (QUIC/UDP)");
+    let _guard = ConnectionGuard::new(stream.is_connected.clone(), stream.transport.clone());
 
     let connection = session_request.accept().await?;
 

@@ -48,17 +48,119 @@ pub fn list_output_devices() -> Vec<String> {
     names
 }
 
+/// List available audio *input* (capture) device names. Used to tell the user
+/// exactly which entry to pick in Discord's microphone dropdown — Discord
+/// lists capture endpoints, while QuicMic plays into a render endpoint.
+pub fn list_input_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    let mut names = Vec::new();
+
+    match host.input_devices() {
+        Ok(devices) => {
+            for device in devices {
+                if let Ok(desc) = device.description() {
+                    names.push(desc.name().to_string());
+                }
+            }
+        }
+        Err(e) => error!("Failed to enumerate audio input devices: {}", e),
+    }
+
+    names
+}
+
+/// Guess which capture endpoint Discord will list for the chosen render
+/// device. Virtual cables expose a render/input pair with mirrored names
+/// (VB-CABLE: "CABLE Input" -> "CABLE Output"; BlackHole/VirtualQuicMic use
+/// the same name on both sides), so we try the mirrored name first and fall
+/// back to a same-name match. Returns `None` when nothing looks like a pair.
+pub fn suggest_discord_input(render_name: &str, input_devices: &[String]) -> Option<String> {
+    let lower_inputs: Vec<String> = input_devices.iter().map(|n| n.to_lowercase()).collect();
+
+    // Candidate 1: mirrored name ("CABLE Input (…)" -> "CABLE Output (…)").
+    let mirrored = render_name.replacen("Input", "Output", 1);
+    if mirrored != render_name {
+        let needle = mirrored.to_lowercase();
+        if let Some(i) = lower_inputs.iter().position(|n| n.contains(&needle)) {
+            return Some(input_devices[i].clone());
+        }
+    }
+
+    // Candidate 2: the render name itself appears among capture devices
+    // (loopback-style virtual devices share one name for both directions).
+    let needle = render_name.to_lowercase();
+    if let Some(i) = lower_inputs.iter().position(|n| n.contains(&needle)) {
+        return Some(input_devices[i].clone());
+    }
+
+    None
+}
+
+/// Rename a Windows capture endpoint's friendly name in the registry, so
+/// Discord (and the Windows sound panel) list e.g. "QuicMic" instead of
+/// "CABLE Output (VB-Audio Virtual Cable)".
+///
+/// This writes `PKEY_Device_FriendlyName` under
+/// `HKLM\…\MMDevices\Audio\Capture\{guid}\Properties` for the first capture
+/// endpoint whose current friendly name contains `match_substring`
+/// (case-insensitive). Returns the previous name.
+///
+/// Requires administrator rights; without them the registry write fails and
+/// the error tells the user to re-run as administrator. Takes effect for
+/// newly opened clients (restart Discord if it is already running).
+#[cfg(windows)]
+pub fn rename_capture_device(match_substring: &str, new_name: &str) -> anyhow::Result<String> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let mmdevices = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(r"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture")
+        .map_err(|e| {
+            anyhow::anyhow!("Could not open the audio-device registry (run as administrator): {e}")
+        })?;
+
+    // PKEY_Device_FriendlyName = {A45C254E-DF1C-4EFD-8020-67D146A850E0},2
+    const FRIENDLY_NAME_VALUE: &str = "{a45c254e-df1c-4efd-8020-67d146a850e0},2";
+    let needle = match_substring.to_lowercase();
+
+    for guid in mmdevices.enum_keys().filter_map(Result::ok) {
+        let props = match mmdevices.open_subkey(format!(r"{guid}\Properties")) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let current: String = match props.get_value(FRIENDLY_NAME_VALUE) {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        if current.to_lowercase().contains(&needle) {
+            props
+                .set_value(FRIENDLY_NAME_VALUE, &new_name)
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "Could not rename '{current}' — re-run QuicMic as administrator and try again ({e})"
+                    )
+                })?;
+            return Ok(current);
+        }
+    }
+
+    anyhow::bail!(
+        "No capture device matching '{match_substring}' found. Available capture devices:\n  - {}",
+        list_input_devices().join("\n  - ")
+    )
+}
+
 #[cfg(target_os = "windows")]
-const DEFAULT_DEVICE: &str = "CABLE Input";
+pub const DEFAULT_DEVICE: &str = "CABLE Input";
 
 #[cfg(target_os = "macos")]
-const DEFAULT_DEVICE: &str = "BlackHole";
+pub const DEFAULT_DEVICE: &str = "BlackHole";
 
 #[cfg(target_os = "linux")]
-const DEFAULT_DEVICE: &str = "VirtualQuicMic";
+pub const DEFAULT_DEVICE: &str = "VirtualQuicMic";
 
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-const DEFAULT_DEVICE: &str = "CABLE Input";
+pub const DEFAULT_DEVICE: &str = "CABLE Input";
 
 /// Find an output device by name substring (case-insensitive).
 /// Falls back to the platform-specific default virtual device if no explicit name is given.
@@ -542,8 +644,41 @@ pub fn spawn_output_supervisor(
 
 #[cfg(test)]
 mod tests {
-    use super::{write_data, ResamplerState};
+    use super::{suggest_discord_input, write_data, ResamplerState};
     use crate::audio::RingBuffer;
+
+    #[test]
+    fn discord_suggestion_mirrors_vb_cable_pair() {
+        let inputs = vec![
+            "Microphone (Realtek Audio)".to_string(),
+            "CABLE Output (VB-Audio Virtual Cable)".to_string(),
+        ];
+        assert_eq!(
+            suggest_discord_input("CABLE Input (VB-Audio Virtual Cable)", &inputs),
+            Some("CABLE Output (VB-Audio Virtual Cable)".to_string()),
+            "the render/input pair must resolve to its capture/output twin"
+        );
+    }
+
+    #[test]
+    fn discord_suggestion_matches_same_name_loopback() {
+        let inputs = vec!["BlackHole 2ch".to_string()];
+        assert_eq!(
+            suggest_discord_input("BlackHole 2ch", &inputs),
+            Some("BlackHole 2ch".to_string()),
+            "loopback-style devices share one name for both directions"
+        );
+    }
+
+    #[test]
+    fn discord_suggestion_returns_none_without_a_pair() {
+        let inputs = vec!["Microphone (Realtek Audio)".to_string()];
+        assert_eq!(
+            suggest_discord_input("CABLE Input (VB-Audio Virtual Cable)", &inputs),
+            None,
+            "no plausible pair means no suggestion rather than a wrong one"
+        );
+    }
 
     #[test]
     fn resampler_stays_silent_while_prebuffering() {

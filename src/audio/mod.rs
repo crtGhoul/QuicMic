@@ -10,7 +10,12 @@ mod output;
 mod processor;
 mod ring_buffer;
 
-pub use output::{list_output_devices, spawn_output_supervisor};
+#[cfg(windows)]
+pub use output::rename_capture_device;
+pub use output::{
+    find_device, list_input_devices, list_output_devices, spawn_output_supervisor,
+    suggest_discord_input, DEFAULT_DEVICE,
+};
 pub use processor::{decode_into_rings, MAX_SAMPLES_PER_PACKET};
 pub use ring_buffer::RingBuffer;
 

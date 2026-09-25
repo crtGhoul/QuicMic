@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-25
+
+### Added
+- Interactive audio-device picker: when `--device` is not given and the terminal is interactive, startup now shows a numbered list of output devices (with the virtual cable marked as recommended) instead of silently guessing.
+- Discord mic guidance: the startup banner now shows the selected audio device and the exact capture-endpoint name to pick in Discord (Settings → Voice & Video → Input Device), with the virtual cable's render/capture pair (e.g. VB-CABLE's "CABLE Input" → "CABLE Output") resolved automatically.
+- `--rename-mic "NAME"` (Windows): renames the virtual cable's capture endpoint in the registry, so Discord lists e.g. "QuicMic" instead of "CABLE Output (VB-Audio Virtual Cable)". Requires administrator rights; restart Discord to see the new name.
+- `--list-devices` now also lists audio input (capture) devices — the names Discord shows as microphones.
+- Connection monitor: the terminal now logs phone connect/disconnect transitions together with the active transport ("WebTransport (QUIC/UDP)" vs "WebSocket (TCP fallback)"), so a silent fallback to the slower transport is visible instead of invisible.
+- `--buffer-ms` (default 500): tunes the ring-buffer depth in milliseconds. Each 100 ms costs ~19 KB per ring; the app idles around 15–20 MB total, so this is a fine-tuning knob for low-RAM or low-latency setups.
+
 ### Added
 - Hear-yourself monitor: `--monitor-device [NAME]` starts a second supervised audio stream that plays your mic audio through a physical PC output device (host default, or substring match like `--device`), fed by its own ring buffer so the SPSC contract stays intact. Mute/unmute at runtime via `POST /api/monitor` or the toggle on the phone's settings panel. Warns about speaker feedback (headphones recommended).
 - PC-side output volume: `--volume` and a new "Output Volume" slider on the phone's settings panel, backed by `POST/GET /api/settings` (`output_volume`, clamped 0.0–5.0). Applied in the output stage after resampling, so it scales both the virtual-device and monitor streams.

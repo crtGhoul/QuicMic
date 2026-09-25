@@ -53,6 +53,15 @@ QuicMic outputs to a virtual device. Install one and (optionally) pass its name 
 1. Install [VB-CABLE](https://vb-audio.com/Cable/). The default device name is **`CABLE Input`** (QuicMic's default on Windows).
 2. In the app where you want to use the mic, select **`CABLE Output`** as the microphone.
 
+**Rename it in Discord (optional):** Discord lists the cable as "CABLE Output (VB-Audio Virtual Cable)". To make it show a name you choose instead:
+
+```bash
+# Run as administrator — renames the cable's capture endpoint, e.g. to "QuicMic"
+quicmic --rename-mic "QuicMic"
+```
+
+Then restart Discord and pick **QuicMic** in Settings → Voice & Video → Input Device. The startup banner also tells you exactly which input name to pick.
+
 </details>
 
 <details>
@@ -202,8 +211,9 @@ Run `quicmic -h` for the full list. The main options:
 | Option | Default | Description |
 | --- | --- | --- |
 | `-p, --port <PORT>` | `8443` | Port used for **both** HTTPS (TCP) and WebTransport (UDP). Also via `QUICMIC_PORT`. |
-| `-d, --device <NAME>` | platform default | Output device, matched as a case-insensitive substring. Defaults: `CABLE Input` (Windows), `BlackHole` (macOS), `VirtualQuicMic` (Linux). Also via `QUICMIC_DEVICE`. |
-| `--list-devices` | — | List available audio output devices and exit. |
+| `-d, --device <NAME>` | platform default | Output device, matched as a case-insensitive substring. Defaults: `CABLE Input` (Windows), `BlackHole` (macOS), `VirtualQuicMic` (Linux). If omitted and the terminal is interactive, a numbered picker is shown. Also via `QUICMIC_DEVICE`. |
+| `--list-devices` | — | List available audio output **and** input devices (the input names are what Discord shows as microphones) and exit. |
+| `--rename-mic <NAME>` | — | **Windows only.** Rename the virtual cable's capture endpoint (e.g. to `QuicMic`) so Discord lists your chosen name instead of `CABLE Output (VB-Audio Virtual Cable)`. Requires administrator rights; restart Discord afterwards. |
 | `--ip <IP>` | auto-detected | Override the auto-detected LAN IP address. |
 | `--pin <PIN>` | random | Use a fixed pairing PIN instead of a random 6-digit one. |
 | `--noise-gate <DB>` | `-50` | Initial noise-gate threshold in **dB**, from `-100` (Off) to `0`. Matches the web UI slider. Adjustable at runtime. |
@@ -211,6 +221,7 @@ Run `quicmic -h` for the full list. The main options:
 | `--volume <VALUE>` | `1.0` | Initial PC-side output volume multiplier (0–5). Applied in the output stage after resampling. Adjustable at runtime. |
 | `--monitor-device [NAME]` | — | Enable a hear-yourself monitor: a second audio stream that plays your mic through a physical output device (host default, or matched as a case-insensitive substring like `--device`). Mute/unmute at runtime from the phone's settings panel. ⚠ Speakers + a live mic can feed back — headphones recommended. |
 | `--latency-threshold <MS>` | `150` | Initial latency-recovery threshold in milliseconds (`0` = off). Adjustable at runtime. |
+| `--buffer-ms <MS>` | `500` | Ring-buffer depth in ms of 48 kHz mono audio (clamped 100–5000). Each 100 ms ≈ 19 KB per ring; the app idles around 15–20 MB. Lower = less RAM/latency but less Wi-Fi jitter absorption. |
 | `--dump-certs` | — | Write the generated certificate/key to `certs/` for debugging. |
 | `--no-update-check` | — | Disable the startup check for a newer release on GitHub (also via `QUICMIC_NO_UPDATE_CHECK`). |
 | `-h, --help` / `-V, --version` | — | Show help / version. |

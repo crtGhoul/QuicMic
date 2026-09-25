@@ -1,6 +1,6 @@
 [package]
 name = "quicmic"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "Turn any device with a microphone and a web browser into a wireless PC microphone over WebTransport"
 license = "GPL-3.0-or-later"
@@ -94,6 +94,12 @@ qr2term = "0.3"
 # `tower`'s `util` feature provides `ServiceExt::oneshot`, used to drive the axum
 # router in-process for the HTTP API tests (no real socket or audio device).
 tower = { version = "0.5", features = ["util"] }
+
+# Windows-only: registry access for --rename-mic (renaming the virtual cable's
+# capture endpoint so Discord shows a custom mic name). Pure Rust (windows-sys),
+# no C toolchain needed — safe for the x86_64-pc-windows-gnu cross build.
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
 
 [profile.release]
 opt-level = 3

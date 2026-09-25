@@ -8,16 +8,18 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use clap::Parser;
+use cpal::traits::DeviceTrait;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
-/// Ring-buffer depth, sized at a nominal 48 kHz (the rate browsers capture at).
-/// The ring is allocated once at startup and never resized, so its capacity is
-/// fixed at this nominal rate. ~500ms comfortably absorbs Wi-Fi jitter; actual
-/// latency is governed by PREBUFFER_MS + the latency-recovery threshold, not this
-/// ceiling.
-const RING_BUFFER_MS: usize = 500;
-const RING_BUFFER_SAMPLES: usize = 48_000 * RING_BUFFER_MS / 1000;
+/// Default ring-buffer depth, sized at a nominal 48 kHz (the rate browsers
+/// capture at). Overridable at runtime with `--buffer-ms`. The ring is
+/// allocated once at startup and never resized. ~500ms comfortably absorbs
+/// Wi-Fi jitter; actual latency is governed by PREBUFFER_MS + the
+/// latency-recovery threshold, not this ceiling.
+const RING_BUFFER_MS_DEFAULT: usize = 500;
+/// Nominal sample rate the ring capacity is sized at.
+const RING_BUFFER_RATE: usize = 48_000;
 
 /// After Ctrl+C the HTTP API keeps replying 503 for this long so a streaming
 /// client's ~1s liveness poll reliably observes the shutdown before the process
@@ -213,6 +215,23 @@ struct Cli {
     #[arg(long)]
     list_devices: bool,
 
+    /// Ring-buffer depth in milliseconds of 48 kHz mono audio.
+    /// Lower uses less RAM and shaves latency, but absorbs less Wi-Fi jitter
+    /// before the latency-recovery skip kicks in. Each 100 ms costs ~19 KB
+    /// per ring; the default 500 ms is ~96 KB — the whole app idles around
+    /// 15–20 MB, so this is a fine-tuning knob, not a big lever.
+    #[arg(long, default_value_t = RING_BUFFER_MS_DEFAULT as u32)]
+    buffer_ms: u32,
+
+    /// Rename the microphone as Discord and Windows see it: rewrites the
+    /// friendly name of the virtual cable's *capture* endpoint, so Discord's
+    /// input list shows e.g. "QuicMic" instead of
+    /// "CABLE Output (VB-Audio Virtual Cable)". Takes effect for newly
+    /// opened apps (restart Discord if it is already running).
+    /// Requires administrator rights. Windows only.
+    #[arg(long, value_name = "NAME")]
+    rename_mic: Option<String>,
+
     /// Disable the startup check for a newer release on GitHub.
     #[arg(long, env = "QUICMIC_NO_UPDATE_CHECK")]
     no_update_check: bool,
@@ -256,7 +275,34 @@ async fn run() -> anyhow::Result<()> {
         for (i, name) in audio::list_output_devices().iter().enumerate() {
             println!("  [{}] {}", i, name);
         }
+        println!("\nAvailable audio input devices (what Discord lists as microphones):");
+        for (i, name) in audio::list_input_devices().iter().enumerate() {
+            println!("  [{}] {}", i, name);
+        }
         return Ok(());
+    }
+
+    // ── Rename the Discord-visible mic (Windows) ─────────────────────────
+    // This only rewrites the capture endpoint's friendly name in the
+    // registry — independent of the audio streams started below — so the
+    // rename happens first and startup continues normally afterwards.
+    #[cfg(windows)]
+    if let Some(new_name) = &cli.rename_mic {
+        let new_name = new_name.trim();
+        if new_name.is_empty() {
+            anyhow::bail!("--rename-mic needs a non-empty name, e.g. --rename-mic \"QuicMic\"");
+        }
+        // The capture twin of the default render device ("CABLE Input" ->
+        // "CABLE Output"), substring-matched case-insensitively.
+        let previous = audio::rename_capture_device("CABLE Output", new_name).map_err(|e| {
+            anyhow::anyhow!("{e}\nHint: right-click the exe -> Run as administrator, then retry.")
+        })?;
+        println!("Microphone renamed: '{previous}' -> '{new_name}'.");
+        println!("Restart Discord (if it is open) to see the new name in its input list.\n");
+    }
+    #[cfg(not(windows))]
+    if cli.rename_mic.is_some() {
+        anyhow::bail!("--rename-mic is only supported on Windows.");
     }
 
     set_terminal_title("QuicMic");
@@ -274,8 +320,51 @@ async fn run() -> anyhow::Result<()> {
         info!("  [{}] {}", i, name);
     }
 
+    // ── Pick the audio device ───────────────────────────────────────────
+    // Interactive numbered picker when --device was not given and stdin is a
+    // real terminal; otherwise the previous behaviour stands (substring
+    // match, or the platform virtual-cable default).
+    let device_arg: Option<String> = match &cli.device {
+        Some(name) => Some(name.clone()),
+        None => pick_output_device(&devices)?,
+    };
+
+    // Resolve the choice once so the banner can show the full device name
+    // and the Discord hint; the output supervisor re-resolves the same name.
+    // A bad name is still a fatal startup error, exactly as before.
+    let selected_device_name = audio::find_device(device_arg.as_deref())
+        .map(|d| {
+            d.description()
+                .map(|desc| desc.name().to_string())
+                .unwrap_or_else(|_| "Unknown".to_string())
+        })
+        .unwrap_or_else(|_| device_arg.clone().unwrap_or_else(|| "default".to_string()));
+
+    // Which capture endpoint should the user pick in Discord? Discord lists
+    // *input* devices, while we play into an *output* device — point at the
+    // virtual cable's twin so there is no guessing.
+    let input_devices = audio::list_input_devices();
+    let discord_input = audio::suggest_discord_input(&selected_device_name, &input_devices);
+
     // ── Create shared ring buffer ───────────────────────────────────────
-    let ring = Arc::new(audio::RingBuffer::new(RING_BUFFER_SAMPLES));
+    // Sized from --buffer-ms: each 100 ms of 48 kHz mono i16 is ~19 KB per
+    // ring, so the default 500 ms is ~96 KB. The app idles around 15-20 MB
+    // total; this flag is fine-tuning, not a big lever.
+    let buffer_ms = cli.buffer_ms.clamp(100, 5000);
+    if buffer_ms != cli.buffer_ms {
+        warn!(
+            requested = cli.buffer_ms,
+            clamped = buffer_ms,
+            "--buffer-ms clamped to the 100..=5000 ms range"
+        );
+    }
+    let ring_buffer_samples = RING_BUFFER_RATE * buffer_ms as usize / 1000;
+    info!(
+        buffer_ms,
+        ring_kb = ring_buffer_samples * 2 / 1024,
+        "Ring buffer sized"
+    );
+    let ring = Arc::new(audio::RingBuffer::new(ring_buffer_samples));
 
     // ── Shared atomics ──────────────────────────────────────────────────
     let is_connected = Arc::new(AtomicBool::new(false));
@@ -303,12 +392,16 @@ async fn run() -> anyhow::Result<()> {
     let monitor_ring: Option<Arc<audio::RingBuffer>> = cli
         .monitor_device
         .as_ref()
-        .map(|_| Arc::new(audio::RingBuffer::new(RING_BUFFER_SAMPLES)));
+        .map(|_| Arc::new(audio::RingBuffer::new(ring_buffer_samples)));
     let latency_threshold = Arc::new(AtomicU32::new(
         cli.latency_threshold.min(server::LATENCY_THRESHOLD_MAX_MS),
     ));
     let packets_received = Arc::new(AtomicU64::new(0));
     let packets_lost = Arc::new(AtomicU64::new(0));
+    // Name of the transport carrying the phone session; set by the
+    // transport handlers, read by the status monitor below.
+    let transport: Arc<parking_lot::Mutex<String>> =
+        Arc::new(parking_lot::Mutex::new(String::new()));
     let source_sample_rate = Arc::new(AtomicU32::new(48000));
     let is_shutdown = Arc::new(AtomicBool::new(false));
     let device_ok = Arc::new(AtomicBool::new(false));
@@ -319,7 +412,7 @@ async fn run() -> anyhow::Result<()> {
 
     // ── Start audio output (supervised: auto-rebuilds if the device drops) ──
     audio::spawn_output_supervisor(
-        cli.device.clone(),
+        device_arg.clone(),
         ring.clone(),
         source_sample_rate.clone(),
         latency_threshold.clone(),
@@ -369,7 +462,43 @@ async fn run() -> anyhow::Result<()> {
 
     // ── Print startup banner ────────────────────────────────────────────
     let url = format!("https://{}:{}", url_host(&lan_ip), cli.port);
-    print_banner(&url, &pin, &identity.cert_hash_base64);
+    print_banner(
+        &url,
+        &pin,
+        &identity.cert_hash_base64,
+        &selected_device_name,
+        discord_input.as_deref(),
+    );
+
+    // ── Connection monitor ──────────────────────────────────────────────
+    // Logs phone connect/disconnect transitions together with the active
+    // transport, so a silent fallback from QUIC to the TCP WebSocket (or a
+    // flaky reconnect loop) is visible in the terminal instead of invisible.
+    // Polling every 2s keeps this at ~0% CPU; only transitions are logged.
+    {
+        let mon_connected = is_connected.clone();
+        let mon_transport = transport.clone();
+        tokio::spawn(async move {
+            let mut was_connected = false;
+            let mut last_transport = String::new();
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let now_connected = mon_connected.load(Ordering::SeqCst);
+                let now_transport = mon_transport.lock().clone();
+                if now_connected != was_connected
+                    || (now_connected && now_transport != last_transport)
+                {
+                    if now_connected {
+                        info!("Phone connected via {now_transport}");
+                    } else if was_connected {
+                        info!("Phone disconnected");
+                    }
+                    was_connected = now_connected;
+                    last_transport = now_transport;
+                }
+            }
+        });
+    }
 
     // Print QR code for easy mobile pairing (URL includes PIN as hash fragment)
     let qr_url = format!("{}#{}", url, pin);
@@ -409,6 +538,7 @@ async fn run() -> anyhow::Result<()> {
         monitor_enabled: monitor_enabled.clone(),
         packets_received: packets_received.clone(),
         packets_lost: packets_lost.clone(),
+        transport: transport.clone(),
         source_sample_rate: source_sample_rate.clone(),
         cancel_tx,
         is_shutdown: is_shutdown.clone(),
@@ -505,7 +635,71 @@ fn url_host(ip: &IpAddr) -> String {
     }
 }
 
-fn print_banner(url: &str, pin: &str, cert_hash: &str) {
+/// Interactive audio-output picker. Returns the chosen device's full name, or
+/// `None` to keep the default behaviour (substring match on the platform
+/// virtual-cable default): non-terminal stdin, a single device, an empty
+/// answer, or an invalid choice all fall through to the default.
+fn pick_output_device(devices: &[String]) -> anyhow::Result<Option<String>> {
+    use std::io::{IsTerminal, Write};
+
+    if !std::io::stdin().is_terminal() || devices.len() <= 1 {
+        return Ok(None);
+    }
+
+    println!("\nSelect the audio output device (your mic audio plays into this):");
+    for (i, name) in devices.iter().enumerate() {
+        let recommended = if name
+            .to_lowercase()
+            .contains(&audio::DEFAULT_DEVICE.to_lowercase())
+        {
+            "  <-- virtual cable (recommended)"
+        } else {
+            ""
+        };
+        println!("  [{i}] {name}{recommended}");
+    }
+    print!(
+        "Choice [0-{}] (Enter = {}): ",
+        devices.len() - 1,
+        audio::DEFAULT_DEVICE
+    );
+    std::io::stdout().flush().ok();
+
+    let mut line = String::new();
+    if std::io::stdin().read_line(&mut line).is_err() {
+        return Ok(None);
+    }
+    let line = line.trim();
+    if line.is_empty() {
+        return Ok(None);
+    }
+    match line.parse::<usize>() {
+        Ok(i) if i < devices.len() => Ok(Some(devices[i].clone())),
+        _ => {
+            println!("Invalid choice — using automatic device selection.");
+            Ok(None)
+        }
+    }
+}
+
+/// Truncate to `max` chars, appending "..." when truncated, so long device
+/// names cannot break the fixed-width banner box.
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max.saturating_sub(3)).collect();
+    out.push_str("...");
+    out
+}
+
+fn print_banner(
+    url: &str,
+    pin: &str,
+    cert_hash: &str,
+    audio_device: &str,
+    discord_input: Option<&str>,
+) {
     let version = format!("QuicMic v{}", env!("CARGO_PKG_VERSION"));
     let cert_prefix = if cert_hash.len() >= 20 {
         &cert_hash[..20]
@@ -526,12 +720,31 @@ fn print_banner(url: &str, pin: &str, cert_hash: &str) {
     row(&format!("URL:          {}", url));
     row(&format!("Pairing PIN:  {}", pin));
     row(&format!("Cert SHA-256: {}", cert_prefix));
+    row(&format!(
+        "Audio device: {}",
+        truncate(audio_device, W - 2 - "Audio device: ".len())
+    ));
+    match discord_input {
+        Some(name) => {
+            row(&format!(
+                "Discord mic:  {}",
+                truncate(name, W - 2 - "Discord mic:  ".len())
+            ));
+        }
+        None => {
+            row("Discord mic:  (couldn't match — see --list-devices)");
+        }
+    }
     row("");
     println!("║ ┌{}┐ ║", "─".repeat(W - 4));
     step("Setup instructions:");
     step("1. Scan the QR code below with your phone camera");
     step(&format!("2. Or open: {}", url));
     step(&format!("   and enter PIN: {}", pin));
+    if discord_input.is_some() {
+        step("3. In Discord: Settings -> Voice & Video -> Input");
+        step("   Device, and pick the \"Discord mic\" above");
+    }
     println!("║ └{}┘ ║", "─".repeat(W - 4));
     println!("╚{}╝", "═".repeat(W));
     println!();
